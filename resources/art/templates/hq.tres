@@ -1,0 +1,22 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/card_template.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+mode = "hq"
+size = Vector2(90, 123)
+inner_rect = Rect2(3, 3, 84, 117)
+artwork_rect = Rect2(0, 0, 0, 0)
+slots = {
+"name": Rect2(7, 3, 76, 22),
+"emblem": Rect2(12, 25, 66, 44),
+"health_box": Rect2(28, 72, 34, 41),
+"health": Rect2(31, 79, 28, 29)
+}
+font_sizes = {
+"name": 11,
+"name_min": 9,
+"health": 22,
+"health_min": 19
+}

@@ -1,0 +1,24 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/card_template.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+mode = "cp"
+size = Vector2(64, 54)
+inner_rect = Rect2(1, 1, 62, 52)
+slots = {
+"well": Rect2(6, 6, 52, 42),
+"available": Rect2(11, 12, 25, 30),
+"unit": Rect2(39, 12, 14, 12),
+"capacity": Rect2(39, 25, 14, 17),
+"capacity_divider": Rect2(39, 24, 14, 1)
+}
+font_sizes = {
+"available": 23,
+"available_min": 21,
+"unit": 9,
+"unit_min": 8,
+"capacity": 11,
+"capacity_min": 10
+}

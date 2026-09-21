@@ -1,0 +1,45 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/card_template.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+mode = "full"
+size = Vector2(120, 169.4)
+inner_rect = Rect2(2, 2, 116, 165.4)
+artwork_rect = Rect2(2.4, 24.7, 115.2, 99.9)
+slots = {
+"header": Rect2(2, 2, 116, 22.7),
+"deploy_box": Rect2(2, 2, 23, 20),
+"deploy_cost": Rect2(3, 3, 14, 18),
+"deploy_unit": Rect2(18, 3, 5, 7),
+"action_cost": Rect2(17, 10, 8, 10),
+"name": Rect2(26, 2.4, 86, 21.2),
+"stats_bar": Rect2(21.2, 114.1, 75.3, 20),
+"attack_box": Rect2(21.2, 114.1, 20, 20),
+"attack": Rect2(22.4, 115.3, 17.6, 17.6),
+"health_box": Rect2(76.5, 114.1, 20, 20),
+"health": Rect2(77.7, 115.3, 17.6, 17.6),
+"type_icon_box": Rect2(49.4, 114.1, 20, 20),
+"type_icon": Rect2(50.6, 115.3, 17.6, 17.6),
+"type_name": Rect2(4.7, 133.5, 110.6, 11.8),
+"rule_text": Rect2(4.7, 145.3, 110.6, 19.4)
+}
+font_sizes = {
+"deploy_cost": 12,
+"deploy_cost_min": 10,
+"deploy_unit": 5,
+"action_cost": 7,
+"action_cost_min": 6,
+"name": 9,
+"name_min": 6,
+"attack": 15,
+"attack_min": 11,
+"health": 15,
+"health_min": 11,
+"type_name": 8,
+"type_name_min": 6,
+"rule_text": 7,
+"rule_text_min": 6,
+"rule_lines": 2
+}

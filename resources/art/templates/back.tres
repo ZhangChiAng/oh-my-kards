@@ -1,0 +1,14 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/card_template.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+mode = "back"
+size = Vector2(96, 144)
+inner_rect = Rect2(1, 1, 94, 142)
+artwork_rect = Rect2(7, 7, 82, 130)
+slots = {
+"inner": Rect2(7, 7, 82, 130),
+"emblem": Rect2(34, 58, 28, 28)
+}

@@ -1,0 +1,7 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/config/interaction_config.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+drag_threshold = 8.0

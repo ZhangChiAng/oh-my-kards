@@ -1,0 +1,21 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/art_battle/motion_profile.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+motion_id = "basic_motion_v1"
+detail_delay_seconds = 0.5
+insertion_seconds = 0.12
+travel_curve = "quadratic_out"
+hover_seconds = 0.12
+cancel_seconds = 0.12
+travel_seconds = 0.24
+turn_end_seconds = 0.20
+turn_start_seconds = 0.45
+attack_windup_seconds = 0.12
+attack_line_seconds = 0.10
+attack_hit_seconds = 0.30
+attack_recover_seconds = 0.12
+attack_lunge_distance = 20.0
+deploy_flip_fraction = 0.35

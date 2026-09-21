@@ -1,0 +1,37 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/card_template.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+mode = "field"
+size = Vector2(90, 123)
+inner_rect = Rect2(3, 3, 84, 117)
+artwork_rect = Rect2(3, 21, 84, 96)
+slots = {
+"banner": Rect2(3, 3, 84, 18),
+"action_box": Rect2(3, 3, 16, 18),
+"action_cost": Rect2(3, 3, 16, 18),
+"name": Rect2(22, 3, 50, 18),
+"faction": Rect2(74, 5, 10, 12),
+"faction_icon": Rect2(75, 6, 8, 10),
+"attack_box": Rect2(7, 95, 20, 21),
+"attack": Rect2(8, 96, 18, 19),
+"health_box": Rect2(62, 95, 20, 21),
+"health": Rect2(63, 96, 18, 19),
+"type_icon_box": Rect2(36, 96, 20, 19),
+"type_icon": Rect2(37, 97, 18, 17),
+"type_name": Rect2(9, 50, 72, 20)
+}
+font_sizes = {
+"action_cost": 14,
+"action_cost_min": 12,
+"name": 7,
+"name_min": 6,
+"attack": 16,
+"attack_min": 13,
+"health": 16,
+"health_min": 13,
+"type_name": 10,
+"type_name_min": 8
+}

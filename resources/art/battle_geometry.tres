@@ -1,0 +1,95 @@
+[gd_resource type="Resource" load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/presentation_geometry.gd" id="script"]
+
+[ext_resource type="Resource" path="res://resources/art/templates/full.tres" id="template_full"]
+
+[ext_resource type="Resource" path="res://resources/art/templates/field.tres" id="template_field"]
+
+[ext_resource type="Resource" path="res://resources/art/templates/hq.tres" id="template_hq"]
+
+[ext_resource type="Resource" path="res://resources/art/templates/back.tres" id="template_back"]
+
+[ext_resource type="Resource" path="res://resources/art/templates/cp.tres" id="template_cp"]
+
+[ext_resource type="Resource" path="res://resources/art/templates/end_turn.tres" id="template_end_turn"]
+
+[ext_resource type="Resource" path="res://resources/art/templates/deck.tres" id="template_deck"]
+
+[ext_resource type="Resource" path="res://resources/art/templates/settings.tres" id="template_settings"]
+
+[resource]
+script = ExtResource("script")
+geometry_id = "kards_pc_wireframe_v1"
+templates = {
+"full": ExtResource("template_full"),
+"field": ExtResource("template_field"),
+"hq": ExtResource("template_hq"),
+"back": ExtResource("template_back"),
+"cp": ExtResource("template_cp"),
+"end_turn": ExtResource("template_end_turn"),
+"deck": ExtResource("template_deck"),
+"settings": ExtResource("template_settings")
+}
+layout = {
+"battle_row_left": 150.0,
+"battle_row_right": 750.0,
+"mulligan_card_gap": 14.0,
+"mulligan_scale": 1.395,
+"gap_padding": 5.0,
+"popup_margin": 8.0,
+"popup_gap": 10.0,
+"enemy_hand_step": 78.0,
+"enemy_hand_width": 420.0,
+"enemy_hand_center_y": -18.0,
+"enemy_hand_rise": 10.0,
+"enemy_hand_max_angle": 14.0,
+"battle_font_sizes": {"body": 11, "modal_title": 24},
+"battle_rects": {
+"mulligan_cards": Rect2(0, 174.7, 900, 235),
+"mulligan_confirm": Rect2(359, 530, 182, 42),
+"phase": Rect2(112, 14, 145, 22),
+"turn": Rect2(672, 13, 162, 20),
+"front_control": Rect2(760, 280, 130, 18),
+"modal": Rect2(252, 180, 396, 225),
+"modal_title": Rect2(275, 206, 350, 40),
+"modal_text": Rect2(282, 253, 336, 68),
+"modal_restart": Rect2(330, 339, 240, 40),
+"detail_rules": Rect2(0, 0, 230, 270)
+},
+"battle_deck_angles": {"enemy": -48.0, "player": -44.0},
+"stage_size": Vector2(900, 591),
+"viewport_reference_size": Vector2(640, 360),
+"viewport_rects": {
+"cp_enemy": {"anchor": "left", "rect": Rect2(10, 48, 30, 26)},
+"cp_player": {"anchor": "left", "rect": Rect2(10, 286, 30, 25)},
+"end_turn": {"anchor": "right", "rect": Rect2(565, 224, 62, 16)},
+"settings": {"anchor": "right", "rect": Rect2(618, 31, 12, 12)},
+"modal_close": {"anchor": "right", "rect": Rect2(618, 31, 12, 12)},
+"enemy_deck": {"anchor": "left", "rect": Rect2(22, -23, 59, 94), "allow_edge_crop": true},
+"player_deck": {"anchor": "right", "rect": Rect2(553, 302, 60, 86), "allow_edge_crop": true},
+"menu": {"anchor": "right", "rect": Rect2(524, 50, 106, 38)},
+"restart": {"anchor": "right", "rect": Rect2(529, 54, 96, 30)},
+"player_counts": {"anchor": "left", "rect": Rect2(10, 316, 110, 35)},
+"enemy_counts": {"anchor": "left", "rect": Rect2(10, 81, 110, 34)}
+},
+"enemy_y": 82.75,
+"front_y": 227.75,
+"player_y": 372.75,
+"row_step": 118,
+"frontline_span": Vector2(204, 696),
+"frontline_neutral_y": 287.226,
+"frontline_player_y": 214.533,
+"frontline_enemy_y": 360.51,
+"hand_radius": 820,
+"hand_pivot_y": 1406,
+"hand_center_x": 450,
+"hand_step_angle": 7,
+"max_hand_angle": 18,
+"hover_y": 392,
+"detail_scale": 1.5,
+"detail_padding": 10.0,
+"minimum_body_screen_size": 16.0,
+"layers": {"enemy_hand": 2, "field_card": 10, "hand_card": 30, "command_points": 30, "hover_card": 100, "detail_card": 180, "detail_rules": 181, "ghost": 205, "drag_card": 210, "drag_overlay": 215, "animation": 240, "modal_mask": 300, "modal_panel": 301, "modal_text": 302, "modal_button": 303},
+"animation": {"turn_y_ratio": 0.34, "turn_height": 60.0, "turn_font": 28, "damage_y_ratio": 0.35, "damage_height": 40.0, "damage_font": 26, "minimum_font": 12, "casualty_inset_ratio": 0.18}
+}

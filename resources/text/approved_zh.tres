@@ -1,0 +1,48 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/config/battle_text.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+captions = {
+"command_unit": "K",
+"end_turn": "结束回合",
+"mulligan_keep": "保留起手并开始",
+"mulligan_replace": "更换 %d 张并开始",
+"settings": "设置",
+"restart": "重新开始",
+"close": "×",
+"close_settings": "关闭设置",
+"victory": "战斗胜利",
+"defeat": "战斗失败",
+"draw": "平局",
+"victory_detail": "敌方总部已被摧毁。",
+"defeat_detail": "己方总部失守。",
+"draw_detail": "双方总部同时失守。",
+"player_turn": "你的回合",
+"enemy_turn": "对手回合",
+"first_player": "你是先手",
+"second_player": "你是后手",
+"turn_number": "第 %d 回合",
+"front_neutral": "中立",
+"front_player": "己方控制",
+"front_enemy": "敌方控制",
+"front_status": "前线 · %s · %d/%d",
+"deck_counts": "牌库 %d · 弃牌 %d",
+"enemy_counts": "手牌 %d\n牌库 %d · 弃牌 %d",
+"hq_player": "己方总部",
+"hq_enemy": "敌方总部",
+"side_player": "己方",
+"side_enemy": "敌方",
+"turn_ended": "%s回合结束",
+"turn_started": "%s回合开始",
+"damage": "−%d",
+"unit_detail": "%s\n%s\n\n%s"
+}
+unit_types = {
+"infantry": {"name": "步兵", "brief": "近程 · 移动或攻击", "description": "近程：支援线可攻击敌前线，前线可攻击敌支援与总部。每回合移动或攻击一次。"},
+"tank": {"name": "坦克", "brief": "每回合可移动、攻击各一次", "description": "近程：支援线可攻击敌前线，前线可攻击敌支援与总部。每回合可移动一次并攻击一次，顺序不限。"},
+"artillery": {"name": "火炮", "brief": "远程 · 主动攻击免反击", "description": "远程：可攻击任意敌方场上目标，攻击时不受反击。每回合移动或攻击一次。"},
+"fighter": {"name": "战斗机", "brief": "远程 · 掩护同排单位", "description": "远程：可攻击任意敌方场上目标。掩护同排单位与总部免受轰炸机攻击，自身不受掩护。每回合移动或攻击一次。"},
+"bomber": {"name": "轰炸机", "brief": "远程 · 不反击", "description": "远程：可攻击任意敌方场上目标，攻击时仅战斗机会反击，自身不能反击。须先攻击目标同排的敌方战斗机。每回合移动或攻击一次。"}
+}

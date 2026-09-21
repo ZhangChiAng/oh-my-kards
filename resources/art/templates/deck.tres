@@ -1,0 +1,14 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/card_template.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+mode = "deck"
+size = Vector2(96, 144)
+inner_rect = Rect2(0, 0, 96, 144)
+slots = {
+"leaf_far": Rect2(-4, 4, 96, 144),
+"leaf_near": Rect2(-2, 2, 96, 144),
+"face": Rect2(0, 0, 96, 144)
+}

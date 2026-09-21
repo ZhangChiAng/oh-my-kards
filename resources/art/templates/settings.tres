@@ -1,0 +1,14 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/card_template.gd" id="script"]
+
+[resource]
+script = ExtResource("script")
+mode = "settings"
+size = Vector2(34, 34)
+inner_rect = Rect2(2, 2, 30, 30)
+slots = {
+"icon": Rect2(2, 2, 30, 30),
+"text": Rect2(2, 2, 30, 30)
+}
+font_sizes = {"text": 10, "text_min": 9}
