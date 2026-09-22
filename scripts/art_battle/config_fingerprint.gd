@@ -17,6 +17,8 @@ static func _plain(value: Variant) -> Variant:
 		for item in value: result.append(_plain(item))
 		return result
 	if value is Resource:
+		if value is Texture2D:
+			return {"type": value.get_class(), "path": value.resource_path, "size": var_to_str(value.get_size())}
 		var data: Dictionary = {"type": value.get_class()}
 		if value.get_script() != null: data["script"] = value.get_script().resource_path
 		for property in value.get_property_list():

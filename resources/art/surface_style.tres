@@ -1,0 +1,32 @@
+[gd_resource type="Resource" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/surface_style.gd" id="script"]
+
+
+
+[sub_resource type="SystemFont" id="ChineseFont"]
+font_names = PackedStringArray("Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif")
+font_weight = 600
+multichannel_signed_distance_field = true
+
+[sub_resource type="SystemFont" id="NumberFont"]
+font_names = PackedStringArray("Consolas", "DejaVu Sans Mono", "monospace")
+font_weight = 700
+multichannel_signed_distance_field = true
+
+[sub_resource type="StyleBoxFlat" id="OutlinePanel"]
+bg_color = Color(0, 0, 0, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 1)
+anti_aliasing = true
+
+[resource]
+script = ExtResource("script")
+font = SubResource("ChineseFont")
+number_font = SubResource("NumberFont")
+styles = {"well": SubResource("OutlinePanel")}
+strokes = {"line_width": 1.0, "antialiased": true, "highlight_inset": 3.0, "board_line_width": 1.0, "board_antialiased": false, "modal_alpha": 0.77, "drag_source_alpha": 0.3, "arrow_tip_gap": 4.0, "arrow_shadow_width": 6.0, "arrow_width": 2.5, "arrow_tip_length": 5.0, "arrow_head_length": 9.0, "arrow_head_half_width": 5.0, "attack_line_width": 2.0, "casualty_line_width": 3.0, "label_outline_width": 2.0}
+palette = {"background": Color(0, 0, 0, 1), "panel": Color(0, 0, 0, 1), "well": Color(0, 0, 0, 1), "paper": Color(0, 0, 0, 1), "player": Color(0, 0, 0, 1), "enemy": Color(0, 0, 0, 1), "shadow": Color(0, 0, 0, 1), "board_overlay": Color(0, 0, 0, 1), "text": Color(1, 1, 1, 1), "muted": Color(1, 1, 1, 1), "amber": Color(1, 1, 1, 1), "danger": Color(1, 1, 1, 1), "line": Color(1, 1, 1, 1), "rim": Color(1, 1, 1, 1), "inner_rim": Color(1, 1, 1, 1), "title_ink": Color(1, 1, 1, 1), "ivory": Color(1, 1, 1, 1), "highlight": Color(1, 1, 1, 1), "gold": Color(1, 1, 1, 1), "ink": Color(1, 1, 1, 1), "hurt": Color(1, 1, 1, 1)}

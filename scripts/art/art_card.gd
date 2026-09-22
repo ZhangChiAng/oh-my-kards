@@ -40,7 +40,7 @@ func _draw() -> void:
 		return
 	var visual_theme: Resource = profile.visual_theme
 	draw_set_transform(Vector2.ZERO, 0.0, size / definition.size)
-	visual_theme.renderer.draw_background(self, visual_theme, Rect2(Vector2.ZERO, definition.size))
+	visual_theme.renderer.draw_card_background(self, visual_theme, Rect2(Vector2.ZERO, definition.size))
 	match mode:
 		"full": _draw_full(definition, visual_theme)
 		"field": _draw_field(definition, visual_theme)

@@ -1,9 +1,9 @@
 [gd_resource type="Resource" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/art/art_profile.gd" id="script"]
-[ext_resource type="Resource" path="res://resources/art/wireframe_theme.tres" id="theme"]
+[ext_resource type="Resource" path="res://resources/art/ancient_metal_theme.tres" id="theme"]
 
 [resource]
 script = ExtResource("script")
-profile_id = "wireframe_baseline"
+profile_id = "ancient_metal_v1"
 visual_theme = ExtResource("theme")

@@ -14,7 +14,7 @@ func _draw() -> void:
 		return
 	var accent: Color = profile.visual_theme.color("amber" if legal else "danger")
 	var unit: float = presentation_scale
-	var style: Dictionary = profile.visual_theme.wireframe
+	var style: Dictionary = profile.visual_theme.surface.strokes
 	if arrow and cursor.distance_to(start) > 1.0:
 		var direction: Vector2 = (cursor - start).normalized()
 		var tip: Vector2 = cursor - direction * float(style.arrow_tip_gap) * unit

@@ -26,7 +26,7 @@ func _draw() -> void:
 	if visual_theme.renderer == null:
 		Widgets.record_missing(self, "appearance", "renderer")
 		return
-	visual_theme.renderer.draw_background(self, visual_theme, Rect2(Vector2.ZERO, size))
+	# The view paints the full-viewport tabletop beneath this transparent board.
 	var span: Vector2 = geometry.layout.frontline_span
 	visual_theme.renderer.draw_frontline(self, visual_theme, Vector2(span.x, frontline_y), Vector2(span.y, frontline_y))
 

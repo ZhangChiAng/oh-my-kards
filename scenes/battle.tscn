@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/local/battle_application.gd" id="1_controller"]
+[ext_resource type="Script" path="res://scripts/art_battle/battle_view.gd" id="2_view"]
+[ext_resource type="Resource" path="res://resources/art/ancient_metal_profile.tres" id="3_profile"]
+
+[node name="Battle" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_controller")
+
+[node name="BattleView" type="Control" parent="."]
+layout_mode = 0
+mouse_filter = 2
+script = ExtResource("2_view")
+profile = ExtResource("3_profile")

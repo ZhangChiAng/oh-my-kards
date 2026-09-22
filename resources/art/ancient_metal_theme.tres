@@ -1,0 +1,9 @@
+[gd_resource type="Resource" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/art/visual_theme.gd" id="script"]
+[ext_resource type="Texture2D" path="res://assets/art/backgrounds/ancient-metal-v1.png" id="tabletop"]
+
+[resource]
+script = ExtResource("script")
+resource_name = "Ancient matte metal"
+background_texture = ExtResource("tabletop")

@@ -319,15 +319,15 @@ class Playback extends Control:
 			var target: Control = _entries[_attack_to].node
 			var from: Vector2 = source.position + source.size * 0.5
 			var to: Vector2 = target.position + target.size * 0.5
-			draw_line(from, from.lerp(to, _line_progress), host.profile.visual_theme.color("line"), maxf(1.0, float(host.profile.visual_theme.wireframe.attack_line_width) * _scale), bool(host.profile.visual_theme.wireframe.antialiased))
+			draw_line(from, from.lerp(to, _line_progress), host.display_profile.visual_theme.color("line"), maxf(1.0, float(host.display_profile.visual_theme.surface.strokes.attack_line_width) * _scale), bool(host.display_profile.visual_theme.surface.strokes.antialiased))
 		if str(_stages[_index].name) in ["attack_hit", "attack_recover"]:
 			for key in _casualties:
 				if not _entries.has(key): continue
 				var card: Control = _entries[key].node
 				var inset: Vector2 = card.size * float(host.geometry.layout.animation.casualty_inset_ratio)
-				var color := Color(host.profile.visual_theme.color("line"), card.modulate.a)
-				draw_line(card.position + inset, card.position + card.size - inset, color, maxf(1.0, float(host.profile.visual_theme.wireframe.casualty_line_width) * _scale), bool(host.profile.visual_theme.wireframe.antialiased))
-				draw_line(card.position + Vector2(card.size.x - inset.x, inset.y), card.position + Vector2(inset.x, card.size.y - inset.y), color, maxf(1.0, float(host.profile.visual_theme.wireframe.casualty_line_width) * _scale), bool(host.profile.visual_theme.wireframe.antialiased))
+				var color := Color(host.display_profile.visual_theme.color("line"), card.modulate.a)
+				draw_line(card.position + inset, card.position + card.size - inset, color, maxf(1.0, float(host.display_profile.visual_theme.surface.strokes.casualty_line_width) * _scale), bool(host.display_profile.visual_theme.surface.strokes.antialiased))
+				draw_line(card.position + Vector2(card.size.x - inset.x, inset.y), card.position + Vector2(inset.x, card.size.y - inset.y), color, maxf(1.0, float(host.display_profile.visual_theme.surface.strokes.casualty_line_width) * _scale), bool(host.display_profile.visual_theme.surface.strokes.antialiased))
 
 
 	func _label(value: String, point: Vector2, extent: Vector2, font_size: int, numeric: bool = false) -> Control:
@@ -338,11 +338,11 @@ class Playback extends Control:
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		label.position = point
 		label.size = extent
-		label.add_theme_font_override("font", host.profile.visual_theme.number_font if numeric else host.profile.visual_theme.font)
+		label.add_theme_font_override("font", host.display_profile.visual_theme.surface.number_font if numeric else host.display_profile.visual_theme.surface.font)
 		label.add_theme_font_size_override("font_size", maxi(int(host.geometry.layout.animation.minimum_font), roundi(float(font_size) * _scale)))
-		label.add_theme_color_override("font_color", host.profile.visual_theme.color("text"))
-		label.add_theme_color_override("font_outline_color", host.profile.visual_theme.color("shadow"))
-		label.add_theme_constant_override("outline_size", maxi(1, roundi(float(host.profile.visual_theme.wireframe.label_outline_width) * _scale)))
+		label.add_theme_color_override("font_color", host.display_profile.visual_theme.color("text"))
+		label.add_theme_color_override("font_outline_color", host.display_profile.visual_theme.color("shadow"))
+		label.add_theme_constant_override("outline_size", maxi(1, roundi(float(host.display_profile.visual_theme.surface.strokes.label_outline_width) * _scale)))
 		add_child(label)
 		return label
 

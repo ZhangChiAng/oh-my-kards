@@ -140,7 +140,7 @@ static func diagnostics(canvas: CanvasItem) -> Array:
 
 
 static func theme_color(canvas: CanvasItem, visual_theme: Resource, color_role: String) -> Color:
-	if not visual_theme.palette.get(color_role) is Color:
+	if not visual_theme.surface.palette.get(color_role) is Color:
 		record_missing(canvas, "color", color_role)
 	return visual_theme.color(color_role)
 
@@ -149,7 +149,7 @@ static func draw_fitted_text(canvas: CanvasItem, visual_theme: Resource, definit
 	var rect: Rect2 = slot(definition, key)
 	var preferred: int = int(definition.font_sizes.get(key, 0))
 	var minimum: int = clampi(int(definition.font_sizes.get(key + "_min", preferred)), 1, maxi(1, preferred))
-	var font: Font = visual_theme.number_font if numeric else visual_theme.font
+	var font: Font = visual_theme.surface.number_font if numeric else visual_theme.surface.font
 	if not value.is_empty():
 		if font == null: record_missing(canvas, "font", "number_font" if numeric else "font")
 		if not rect.has_area(): record_missing(canvas, "slot", key)

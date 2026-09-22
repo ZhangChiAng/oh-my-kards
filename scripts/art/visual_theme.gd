@@ -1,19 +1,14 @@
 extends Resource
-## Appearance only. Geometry and animation are independent resources.
-@export var render_mode: String = ""
-@export var palette: Dictionary = {}
-@export var font: Font
-@export var number_font: Font
-@export var styles: Dictionary = {}
-@export var renderer: Resource
-## Line widths, antialiasing and other appearance values, without geometry.
-@export var wireframe: Dictionary = {}
+## Replaceable materials, independent of geometry and diagnostic display.
+@export var surface: Resource = preload("res://resources/art/surface_style.tres")
+@export var renderer: Resource = preload("res://scripts/art/surface_renderer.gd").new()
+@export var background_texture: Texture2D
 
 
 func color(role: String) -> Color:
-	assert(palette.get(role) is Color, "Missing theme color: " + role)
-	return palette[role]
+	assert(surface.palette.get(role) is Color, "Missing theme color: " + role)
+	return surface.palette[role]
 
 
 func style(role: String) -> StyleBox:
-	return styles.get(role) as StyleBox
+	return surface.styles.get(role) as StyleBox

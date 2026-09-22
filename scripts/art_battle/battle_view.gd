@@ -17,7 +17,7 @@ const Layout = preload("res://scripts/art_battle/battle_layout.gd")
 const Presenter = preload("res://scripts/art_battle/presenter.gd")
 const WidgetButton = preload("res://scripts/art_battle/widget_button.gd")
 const Overlay = preload("res://scripts/art_battle/battle_overlay.gd")
-const DefaultProfile = preload("res://resources/art/wireframe_profile.tres")
+const DisplayProfile = preload("res://scripts/art/display_profile.gd")
 
 const DefaultGeometry = preload("res://resources/art/battle_geometry.tres")
 const DefaultText = preload("res://resources/text/approved_zh.tres")
@@ -29,7 +29,14 @@ const Fingerprint = preload("res://scripts/art_battle/config_fingerprint.gd")
 @export var geometry: Resource = DefaultGeometry
 @export var text: Resource = DefaultText
 @export var motion: Resource = DefaultMotion
-@export var profile: Resource = DefaultProfile
+@export var profile: Resource
+@export var geometry_debug: bool = false:
+	set(value):
+		if geometry_debug == value: return
+		geometry_debug = value
+		_refresh_display()
+
+var display_profile: Resource
 
 var _state: Dictionary = {}
 var _actions: Array = []
@@ -113,6 +120,8 @@ func _preview_insertion(key: String) -> void:
 
 
 func _ready() -> void:
+	assert(profile != null and profile.visual_theme != null, "Battle scene must provide a material profile")
+	display_profile = DisplayProfile.resolve(profile, geometry_debug)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip_contents = true
 	_measure_layout()
@@ -122,13 +131,17 @@ func _ready() -> void:
 
 
 func set_profile(value: Resource) -> void:
-	if value == null: return
-	if is_node_ready(): presentation_invalidated.emit()
+	assert(value != null and value.visual_theme != null, "Invalid material profile")
 	profile = value
+	_refresh_display()
+
+
+func _refresh_display() -> void:
 	if not is_node_ready(): return
+	presentation_invalidated.emit()
 	stop_presentation()
 	clear_drag()
-	_measure_layout()
+	display_profile = DisplayProfile.resolve(profile, geometry_debug)
 	_apply_layout()
 	if not _state.is_empty(): render(_state, _actions, _interaction, _selected)
 	queue_redraw()
@@ -153,7 +166,12 @@ func drag_distance(from: Vector2, to: Vector2) -> float:
 
 
 func _draw() -> void:
-	if profile != null: draw_rect(Rect2(Vector2.ZERO, size), profile.visual_theme.color("background"))
+	if display_profile == null or display_profile.visual_theme == null: return
+	var visual_theme: Resource = display_profile.visual_theme
+	if visual_theme.renderer != null:
+		visual_theme.renderer.draw_tabletop(self, visual_theme, Rect2(Vector2.ZERO, size))
+	else:
+		draw_rect(Rect2(Vector2.ZERO, size), visual_theme.color("background"))
 
 
 func _build_view() -> void:
@@ -200,7 +218,7 @@ func _build_view() -> void:
 	add_child(_drag_preview)
 	_drag_preview.hide()
 	_modal_blocker = ColorRect.new()
-	_modal_blocker.color = Color(profile.visual_theme.color("shadow"), float(profile.visual_theme.wireframe.modal_alpha))
+	_modal_blocker.color = Color(display_profile.visual_theme.color("shadow"), float(display_profile.visual_theme.surface.strokes.modal_alpha))
 	_modal_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
 	_modal_blocker.z_index = int(geometry.layout.layers.modal_mask)
 	_modal_blocker.gui_input.connect(_modal_input)
@@ -240,7 +258,7 @@ func _make_label(key: String) -> Control:
 
 func _make_button(key: String, caption: String, role: String = "end_turn") -> BaseButton:
 	var button := WidgetButton.new()
-	button.profile = profile
+	button.profile = display_profile
 	button.geometry = geometry
 	button.role = role
 	button.text = caption
@@ -256,33 +274,34 @@ func _set_rect(control: Control, value: Rect2) -> void:
 
 func _apply_layout() -> void:
 	_card_layer.size = size
-	_board.configure(profile, geometry)
+	_board.configure(display_profile, geometry)
 	_board.position = _layout.stage_rect.position
 	_board.scale = Vector2.ONE * float(_layout.art_scale)
 	_overlay.size = size
-	_overlay.profile = profile
+	_overlay.profile = display_profile
 	_overlay.presentation_scale = _layout.art_scale
 	_modal_blocker.size = size
+	_modal_blocker.color = Color(display_profile.visual_theme.color("shadow"), float(display_profile.visual_theme.surface.strokes.modal_alpha))
 	for key in _labels:
 		var label: Control = _labels[key]
 		if _layout.rects.has(key): _set_rect(label, _layout.rects[key])
-		label.add_theme_font_override("font", profile.visual_theme.font)
+		label.add_theme_font_override("font", display_profile.visual_theme.surface.font)
 		label.add_theme_font_size_override("font_size", _layout.body_font)
-		label.add_theme_color_override("font_color", profile.visual_theme.color("text"))
-	_labels.front_control.add_theme_color_override("font_color", profile.visual_theme.color("muted"))
+		label.add_theme_color_override("font_color", display_profile.visual_theme.color("text"))
+	_labels.front_control.add_theme_color_override("font_color", display_profile.visual_theme.color("muted"))
 	_labels.modal_title.add_theme_font_size_override("font_size", _font_size("modal_title"))
 	for key in ["end_turn", "settings", "restart", "mulligan_confirm", "modal_close"]:
 		var button: BaseButton = _controls[key]
-		button.profile = profile
+		button.profile = display_profile
 		button.geometry = geometry
 		_set_rect(button, _layout.rects[key])
 		button.refresh()
 	for panel in [_rules_detail, _menu_panel, _modal_panel]:
-		panel.add_theme_stylebox_override("panel", profile.visual_theme.style("well"))
+		panel.add_theme_stylebox_override("panel", display_profile.visual_theme.style("well"))
 	_set_rect(_menu_panel, _layout.rects.menu)
 	_set_rect(_modal_panel, _layout.rects.modal)
-	_rules_text.add_theme_font_override("font", profile.visual_theme.font)
-	_rules_text.add_theme_color_override("font_color", profile.visual_theme.color("text"))
+	_rules_text.add_theme_font_override("font", display_profile.visual_theme.surface.font)
+	_rules_text.add_theme_color_override("font_color", display_profile.visual_theme.color("text"))
 	_hide_detail()
 	_sync_modal()
 
@@ -348,11 +367,11 @@ func presentation_set_status(state: Dictionary) -> void:
 	for side in ["player", "enemy"]:
 		var value: Dictionary = player if side == "player" else enemy
 		var cp: Control = _widgets["cp_" + side]
-		cp.configure({"available": value.command_points, "capacity": value.max_command_points, "command_unit": text.caption("command_unit")}, "cp", profile, geometry)
+		cp.configure({"available": value.command_points, "capacity": value.max_command_points, "command_unit": text.caption("command_unit")}, "cp", display_profile, geometry)
 		_set_rect(cp, _layout.rects["cp_" + side])
 		cp.visible = not mulligan
 		var deck: Control = _widgets[side + "_deck"]
-		deck.configure({"count": value.draw_count}, "deck", profile, geometry)
+		deck.configure({"count": value.draw_count}, "deck", display_profile, geometry)
 		_set_rect(deck, _layout.rects[side + "_deck"])
 		deck.pivot_offset = deck.size * 0.5
 		deck.rotation = deg_to_rad(float(geometry.layout.battle_deck_angles[side]))
@@ -392,7 +411,7 @@ func _sync_cards() -> void:
 		_back_cards.append(created)
 	for index in range(_back_cards.size()):
 		var back: Control = _back_cards[index]
-		back.configure({}, "back", profile, geometry.template("back"))
+		back.configure({}, "back", display_profile, geometry.template("back"))
 		back.apply_pose(Layout.enemy_back_pose(_layout, index, enemy_count))
 		back.z_index = int(geometry.layout.layers.enemy_hand) + index
 		back.visible = index < enemy_count and not mulligan
@@ -406,7 +425,7 @@ func _layout_support(side: String, row: String) -> void:
 		var key: String = str(display[index])
 		if key.begins_with("hq:"):
 			var card: Control = _controls[key]
-			card.configure(Presenter.hq_data(_state, side, text), "hq", profile, geometry.template("hq"))
+			card.configure(Presenter.hq_data(_state, side, text), "hq", display_profile, geometry.template("hq"))
 			card.apply_pose(Layout.row_pose(_layout, row, "hq", index, display.size()))
 			card.z_index = int(geometry.layout.layers.field_card) + index
 		else: _place_card(key, Layout.row_pose(_layout, row, "field", index, display.size()), false, int(geometry.layout.layers.field_card) + index)
@@ -436,7 +455,7 @@ func _place_card(id: String, value: Dictionary, hand: bool, order: int) -> void:
 		_card_layer.add_child(created)
 		_cards[id] = created
 	var card: Control = _cards[id]
-	card.configure(Presenter.unit_data(_state, id, _actions, text, _selected), "full" if hand else "field", profile, geometry.template("full" if hand else "field"))
+	card.configure(Presenter.unit_data(_state, id, _actions, text, _selected), "full" if hand else "field", display_profile, geometry.template("full" if hand else "field"))
 	card.apply_pose(value)
 	card.set_meta("hover_pose", "base")
 	card.z_index = order
@@ -637,14 +656,14 @@ func _update_detail(key: String) -> void:
 	_rules_text.add_theme_font_size_override("font_size", _layout.body_font)
 	var padding: float = float(geometry.layout.detail_padding) * float(_layout.art_scale)
 	var width: float = float(_layout.rects.detail_rules.size.x)
-	var text_size: Vector2 = profile.visual_theme.font.get_multiline_string_size(_rules_text.text, HORIZONTAL_ALIGNMENT_LEFT, width - padding * 2.0, _layout.body_font, -1, TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE)
+	var text_size: Vector2 = display_profile.visual_theme.surface.font.get_multiline_string_size(_rules_text.text, HORIZONTAL_ALIGNMENT_LEFT, width - padding * 2.0, _layout.body_font, -1, TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE)
 	var panel_size: Vector2 = _layout.rects.detail_rules.size
 	var detail_geometry: Dictionary = Layout.detail_geometry(_layout, _controls[key].screen_rect(), panel_size, key.begins_with("unit:"), _fixed_ui_rects())
 	_detail_geometry = detail_geometry.duplicate(true)
 	_detail_geometry["text_height"] = text_size.y
 	_detail_geometry["padding"] = padding
 	if key.begins_with("unit:"):
-		_detail.configure(data, "full", profile, self.geometry.template("full"))
+		_detail.configure(data, "full", display_profile, self.geometry.template("full"))
 		_detail.apply_pose(detail_geometry.card)
 		_detail.show()
 	else: _detail.hide()
@@ -750,10 +769,10 @@ func show_drag(interaction: Dictionary, cursor: Vector2, source: Dictionary) -> 
 	_drag_preview.visible = interaction.source_zone == "hand"
 	var id: String = str(interaction.source_id)
 	if _cards.has(id):
-		_cards[id].modulate.a = float(profile.visual_theme.wireframe.drag_source_alpha) if interaction.source_zone == "hand" else 1.0
+		_cards[id].modulate.a = float(display_profile.visual_theme.surface.strokes.drag_source_alpha) if interaction.source_zone == "hand" else 1.0
 		var data: Dictionary = Presenter.unit_data(_state, id, _actions, text, _selected)
 		data.highlighted = true
-		_drag_preview.configure(data, "full" if interaction.source_zone == "hand" else "field", profile, geometry.template("full" if interaction.source_zone == "hand" else "field"))
+		_drag_preview.configure(data, "full" if interaction.source_zone == "hand" else "field", display_profile, geometry.template("full" if interaction.source_zone == "hand" else "field"))
 		var preview_size: Vector2 = _layout.full_size if interaction.source_zone == "hand" else _layout.field_size
 		_drag_preview.apply_pose({"position": cursor - preview_size * 0.5, "size": preview_size, "rotation": 0.0, "scale": Vector2.ONE})
 	_update_targets()
@@ -855,7 +874,7 @@ func presentation_update_card(card: Control, key: String, state: Dictionary) -> 
 	else:
 		mode = "full" if key.begins_with("hand:") else "field"
 		data = Presenter.unit_data(state, key.get_slice(":", 1), _actions, text)
-	card.configure(data, mode, profile, geometry.template(mode))
+	card.configure(data, mode, display_profile, geometry.template(mode))
 
 
 func presentation_hide_card(key: String) -> void:
@@ -879,8 +898,10 @@ func presentation_snapshot() -> Dictionary:
 	return {
 		"geometry_id": geometry.geometry_id, "geometry_fingerprint": Fingerprint.of(geometry.spec()),
 		"motion_id": motion.motion_id, "motion_fingerprint": Fingerprint.of(motion.spec()),
-		"profile_id": profile.profile_id, "render_mode": profile.visual_theme.render_mode,
-		"appearance_fingerprint": Fingerprint.of(profile),
+		"profile_id": profile.profile_id, "render_mode": "geometry_debug" if geometry_debug else "material",
+		"background_texture": display_profile.visual_theme.background_texture.resource_path if display_profile.visual_theme.background_texture != null else "",
+		"material_fingerprint": Fingerprint.of(profile),
+		"appearance_fingerprint": Fingerprint.of(display_profile),
 		"motion": motion.spec(), "viewport": {"width": size.x, "height": size.y},
 		"frontline_y": _board.frontline_y,
 		"playback": _presentation_run.snapshot() if _presentation_run != null else {"done": true, "cancelled": false, "stage": "idle", "progress": 1.0, "elapsed": 0.0, "duration": 0.0},
