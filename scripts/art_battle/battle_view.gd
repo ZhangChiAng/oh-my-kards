@@ -238,7 +238,7 @@ func _build_view() -> void:
 	var restart: BaseButton = _make_button("restart", text.caption("restart"))
 	restart.z_index = int(geometry.layout.layers.modal_button)
 	restart.pressed.connect(func(): restart_requested.emit())
-	var close_button: BaseButton = _make_button("modal_close", text.caption("close"))
+	var close_button: BaseButton = _make_button("modal_close", text.caption("close"), "settings")
 	close_button.z_index = int(geometry.layout.layers.modal_button)
 	close_button.tooltip_text = text.caption("close_settings")
 	close_button.pressed.connect(close_modal)
@@ -261,6 +261,7 @@ func _make_button(key: String, caption: String, role: String = "end_turn") -> Ba
 	button.profile = display_profile
 	button.geometry = geometry
 	button.role = role
+	button.icon_role = "settings_icon" if key == "settings" else ("close_icon" if key == "modal_close" else "")
 	button.text = caption
 	add_child(button)
 	_controls[key] = button
@@ -289,6 +290,10 @@ func _apply_layout() -> void:
 		label.add_theme_font_size_override("font_size", _layout.body_font)
 		label.add_theme_color_override("font_color", display_profile.visual_theme.color("text"))
 	_labels.front_control.add_theme_color_override("font_color", display_profile.visual_theme.color("muted"))
+	for key in ["phase", "turn"]:
+		var backing: StyleBox = display_profile.visual_theme.style("status_backing")
+		if backing != null: _labels[key].add_theme_stylebox_override("background", backing)
+		else: _labels[key].remove_theme_stylebox_override("background")
 	_labels.modal_title.add_theme_font_size_override("font_size", _font_size("modal_title"))
 	for key in ["end_turn", "settings", "restart", "mulligan_confirm", "modal_close"]:
 		var button: BaseButton = _controls[key]

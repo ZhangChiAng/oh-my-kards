@@ -1,0 +1,106 @@
+[gd_resource type="Resource" format=3]
+
+[ext_resource type="Script" path="res://scripts/art/control_skin.gd" id="script"]
+
+[ext_resource type="Texture2D" path="res://assets/art/controls/button.png" id="button"]
+
+[ext_resource type="Texture2D" path="res://assets/art/controls/panel.png" id="panel"]
+
+[ext_resource type="Texture2D" path="res://assets/art/controls/energy.png" id="energy"]
+
+[ext_resource type="Texture2D" path="res://assets/art/controls/stamp.png" id="stamp"]
+
+[ext_resource type="Texture2D" path="res://assets/art/controls/settings.svg" id="settings"]
+
+[ext_resource type="Texture2D" path="res://assets/art/controls/close.svg" id="close"]
+
+[sub_resource type="StyleBoxTexture" id="button"]
+texture = ExtResource("button")
+region_rect = Rect2(64, 193, 1894, 377)
+modulate_color = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxTexture" id="button_hover"]
+texture = ExtResource("button")
+region_rect = Rect2(64, 193, 1894, 377)
+modulate_color = Color(1.25, 1.25, 1.2, 1)
+
+[sub_resource type="StyleBoxTexture" id="button_pressed"]
+texture = ExtResource("button")
+region_rect = Rect2(64, 193, 1894, 377)
+modulate_color = Color(0.66, 0.69, 0.7, 1)
+
+[sub_resource type="StyleBoxTexture" id="button_disabled"]
+texture = ExtResource("button")
+region_rect = Rect2(64, 193, 1894, 377)
+modulate_color = Color(0.45, 0.47, 0.48, 1)
+
+[sub_resource type="StyleBoxTexture" id="panel"]
+texture = ExtResource("panel")
+region_rect = Rect2(18, 53, 1631, 840)
+modulate_color = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxTexture" id="status"]
+texture = ExtResource("panel")
+region_rect = Rect2(18, 53, 1631, 840)
+modulate_color = Color(0.7, 0.73, 0.75, 1)
+
+[sub_resource type="StyleBoxTexture" id="energy"]
+texture = ExtResource("energy")
+region_rect = Rect2(21, 74, 1324, 1007)
+modulate_color = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxTexture" id="energy_hover"]
+texture = ExtResource("energy")
+region_rect = Rect2(21, 74, 1324, 1007)
+modulate_color = Color(1.25, 1.25, 1.2, 1)
+
+[sub_resource type="StyleBoxTexture" id="energy_pressed"]
+texture = ExtResource("energy")
+region_rect = Rect2(21, 74, 1324, 1007)
+modulate_color = Color(0.66, 0.69, 0.7, 1)
+
+[sub_resource type="StyleBoxTexture" id="energy_disabled"]
+texture = ExtResource("energy")
+region_rect = Rect2(21, 74, 1324, 1007)
+modulate_color = Color(0.45, 0.47, 0.48, 1)
+
+[sub_resource type="StyleBoxTexture" id="stamp"]
+texture = ExtResource("stamp")
+region_rect = Rect2(0, 0, 1254, 1254)
+modulate_color = Color(0.85, 0.85, 0.85, 0.9)
+
+[sub_resource type="StyleBoxTexture" id="settings_icon"]
+texture = ExtResource("settings")
+region_rect = Rect2(0, 0, 100, 100)
+modulate_color = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxTexture" id="close_icon"]
+texture = ExtResource("close")
+region_rect = Rect2(0, 0, 100, 100)
+modulate_color = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxEmpty" id="empty"]
+
+[resource]
+script = ExtResource("script")
+styles = {
+"well": SubResource("panel"),
+"status_backing": SubResource("status"),
+"end_turn_face": SubResource("button"),
+"end_turn_face_hover": SubResource("button_hover"),
+"end_turn_face_pressed": SubResource("button_pressed"),
+"end_turn_face_disabled": SubResource("button_disabled"),
+"end_turn_well": SubResource("empty"),
+"cp_face": SubResource("energy"),
+"cp_well": SubResource("empty"),
+"cp_divider": SubResource("empty"),
+"settings": SubResource("energy"),
+"settings_hover": SubResource("energy_hover"),
+"settings_pressed": SubResource("energy_pressed"),
+"settings_disabled": SubResource("energy_disabled"),
+"settings_icon": SubResource("settings_icon"),
+"close_icon": SubResource("close_icon"),
+"mulligan_mark": SubResource("stamp")
+}
+colors = {"control_text": Color(0.894, 0.898, 0.875, 1), "control_muted": Color(0.51, 0.54, 0.55, 1), "control_gold": Color(0.847, 0.808, 0.671, 1)}
+

@@ -9,6 +9,10 @@ func draw_card_background(canvas: CanvasItem, visual_theme: Resource, rect: Rect
 func draw_plate(canvas: CanvasItem, visual_theme: Resource, role: String, rect: Rect2) -> void:
 	if not rect.has_area():
 		return
+	var skin: StyleBox = visual_theme.style(role)
+	if skin != null:
+		canvas.draw_style_box(skin, rect)
+		return
 	var appearance: Dictionary = visual_theme.surface.strokes
 	if not role.ends_with("_frame"):
 		canvas.draw_rect(rect, visual_theme.color("panel"))

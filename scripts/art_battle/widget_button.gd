@@ -10,6 +10,7 @@ var text: String = "":
 var profile: Resource
 var geometry: Resource
 var role: String = "end_turn"
+var icon_role: String = ""
 var _surface: Control
 var _hovered: bool = false
 
@@ -34,6 +35,6 @@ func _ready() -> void:
 func refresh() -> void:
 	if not is_instance_valid(_surface) or profile == null:
 		return
-	_surface.configure({"text": text, "disabled": disabled, "hovered": _hovered, "pressed": is_pressed()}, role, profile, geometry)
+	_surface.configure({"text": text, "icon_role": icon_role, "disabled": disabled, "hovered": _hovered, "pressed": is_pressed()}, role, profile, geometry)
 	_surface.size = size
 	_surface.position = Vector2.ZERO

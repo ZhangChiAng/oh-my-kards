@@ -9,6 +9,7 @@ size = Vector2(120, 169.4)
 inner_rect = Rect2(2, 2, 116, 165.4)
 artwork_rect = Rect2(2.4, 24.7, 115.2, 99.9)
 slots = {
+"mulligan_mark": Rect2(25.2, 34.6, 69.6, 69.6),
 "header": Rect2(2, 2, 116, 22.7),
 "deploy_box": Rect2(2, 2, 23, 20),
 "deploy_cost": Rect2(3, 3, 14, 18),

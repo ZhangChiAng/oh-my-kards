@@ -44,8 +44,8 @@ func _draw() -> void:
 		"end_turn": _draw_end_turn(definition, visual_theme)
 		"deck": _draw_deck(definition, visual_theme)
 		"settings":
-			draw_plate(self, visual_theme, "settings", Rect2(Vector2.ZERO, definition.size))
-			_text("text", str(display_data.get("text", "")), definition, visual_theme, "text")
+			draw_plate(self, visual_theme, "settings" + _state_suffix(), Rect2(Vector2.ZERO, definition.size))
+			_button_text(definition, visual_theme)
 	draw_set_transform(Vector2.ZERO)
 
 
@@ -59,13 +59,24 @@ func _draw_cp(definition: Resource, visual_theme: Resource) -> void:
 
 
 func _draw_end_turn(definition: Resource, visual_theme: Resource) -> void:
-	var state_style: String = "end_turn_face"
-	if display_data.get("pressed", false):
-		state_style += "_pressed"
-	elif display_data.get("hovered", false):
-		state_style += "_hover"
+	var state_style: String = "end_turn_face" + _state_suffix()
 	draw_plate(self, visual_theme, state_style, Rect2(Vector2.ZERO, definition.size))
 	draw_plate(self, visual_theme, "end_turn_well", slot(definition, "well"))
+	_button_text(definition, visual_theme)
+
+
+func _state_suffix() -> String:
+	if display_data.get("disabled", false): return "_disabled"
+	if display_data.get("pressed", false): return "_pressed"
+	if display_data.get("hovered", false): return "_hover"
+	return ""
+
+
+func _button_text(definition: Resource, visual_theme: Resource) -> void:
+	var icon: String = str(display_data.get("icon_role", ""))
+	if not icon.is_empty() and visual_theme.style(icon) != null:
+		draw_plate(self, visual_theme, icon, slot(definition, "text"))
+		return
 	_text("text", str(display_data.get("text", "")), definition, visual_theme, "muted" if display_data.get("disabled", false) else "text")
 
 
@@ -83,7 +94,9 @@ func _draw_deck(definition: Resource, visual_theme: Resource) -> void:
 
 
 func _text(key: String, value: String, definition: Resource, visual_theme: Resource, color_role: String, numeric: bool = false) -> void:
-	_text_geometry[key] = draw_fitted_text(self, visual_theme, definition, key, value, color_role, numeric)
+	var ink: String = "control_" + color_role
+	if visual_theme.control_skin == null or not visual_theme.control_skin.colors.has(ink): ink = color_role
+	_text_geometry[key] = draw_fitted_text(self, visual_theme, definition, key, value, ink, numeric)
 
 
 func contains_point(global_point: Vector2) -> bool:
@@ -140,7 +153,7 @@ static func diagnostics(canvas: CanvasItem) -> Array:
 
 
 static func theme_color(canvas: CanvasItem, visual_theme: Resource, color_role: String) -> Color:
-	if not visual_theme.surface.palette.get(color_role) is Color:
+	if not visual_theme.has_color(color_role):
 		record_missing(canvas, "color", color_role)
 	return visual_theme.color(color_role)
 

@@ -19,6 +19,8 @@ func _ready() -> void:
 
 
 func _draw() -> void:
+	if not text.is_empty() and has_theme_stylebox_override("background"):
+		draw_style_box(get_theme_stylebox("background"), Rect2(Vector2.ZERO, size))
 	var font: Font = get_theme_font("font")
 	var chosen: int = get_theme_font_size("font_size")
 	var lines: Array[String] = []

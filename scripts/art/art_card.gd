@@ -48,6 +48,8 @@ func _draw() -> void:
 		"back": Widgets.draw_back(self, visual_theme, definition)
 	if display_data.get("highlighted", false):
 		Widgets.draw_plate(self, visual_theme, "highlight_frame", Rect2(Vector2.ZERO, definition.size))
+	if mode == "full" and display_data.get("selected", false):
+		Widgets.draw_plate(self, visual_theme, "mulligan_mark", _slot("mulligan_mark"))
 	draw_set_transform(Vector2.ZERO)
 
 
@@ -96,7 +98,9 @@ func _draw_hq(definition: Resource, visual_theme: Resource) -> void:
 
 
 func _text(key: String, value: String, definition: Resource, visual_theme: Resource, color_role: String, numeric: bool = false, wrap: bool = false) -> void:
-	_text_geometry[key] = Widgets.draw_fitted_text(self, visual_theme, definition, key, value, color_role, numeric, wrap)
+	var card_role: String = "card_" + color_role
+	var resolved_role: String = card_role if visual_theme.surface.palette.has(card_role) else color_role
+	_text_geometry[key] = Widgets.draw_fitted_text(self, visual_theme, definition, key, value, resolved_role, numeric, wrap)
 
 
 func _slot(key: String) -> Rect2:

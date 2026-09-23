@@ -1,9 +1,18 @@
-[gd_resource type="Resource" load_steps=3 format=3]
+[gd_resource type="Resource" load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/art/visual_theme.gd" id="script"]
+[ext_resource type="Resource" path="res://resources/art/steel_control_skin.tres" id="controls"]
 [ext_resource type="Texture2D" path="res://assets/art/backgrounds/ancient-metal-v1.png" id="tabletop"]
+[ext_resource type="Texture2D" path="res://assets/art/materials/graphite-paper.png" id="paper"]
+[ext_resource type="Script" path="res://scripts/art/graphite_renderer.gd" id="renderer"]
+
+[sub_resource type="Resource" id="GraphiteRenderer"]
+script = ExtResource("renderer")
 
 [resource]
 script = ExtResource("script")
-resource_name = "Ancient matte metal"
+resource_name = "Ancient matte metal and graphite paper"
 background_texture = ExtResource("tabletop")
+card_texture = ExtResource("paper")
+control_skin = ExtResource("controls")
+renderer = SubResource("GraphiteRenderer")
