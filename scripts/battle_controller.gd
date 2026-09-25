@@ -2,6 +2,7 @@ extends Control
 ## Coordinates commands and input. Rules own the game; BattleView owns presentation.
 
 signal restart_requested
+signal main_menu_requested
 signal action_resolved(action: Dictionary, actor: String, result: Dictionary, before: Dictionary, after: Dictionary)
 
 const DefaultInteraction = preload("res://resources/interaction/basic_interaction.tres")
@@ -32,6 +33,7 @@ func _ready() -> void:
 	_view = $BattleView
 	_view.end_turn_requested.connect(func(): _player_command({"type": "end_turn"}))
 	_view.restart_requested.connect(request_restart)
+	_view.main_menu_requested.connect(request_main_menu)
 	_view.mulligan_confirm_requested.connect(_confirm_mulligan)
 	_view.modal_changed.connect(_on_modal_changed)
 	_view.presentation_invalidated.connect(_on_presentation_invalidated)
@@ -172,6 +174,11 @@ func attach_session(session: RefCounted) -> void:
 	rules = session
 	if is_instance_valid(_view): _view.reset_presentation()
 	_refresh_ui()
+
+
+func request_main_menu() -> void:
+	attach_session(null)
+	main_menu_requested.emit()
 
 
 func request_restart() -> void:

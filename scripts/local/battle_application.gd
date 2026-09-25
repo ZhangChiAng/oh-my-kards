@@ -24,6 +24,7 @@ func _ready() -> void:
 		elif args[index] == "--run-id": run_id = args[index + 1]
 		elif args[index] == "--profile": _view.set_profile(load(args[index + 1]))
 	restart_requested.connect(_start_local_session)
+	main_menu_requested.connect(func(): get_tree().change_scene_to_file.call_deferred("res://scenes/main_menu.tscn"))
 	action_resolved.connect(_record_action)
 	_start_local_session()
 

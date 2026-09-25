@@ -13,10 +13,13 @@ var role: String = "end_turn"
 var icon_role: String = ""
 var _surface: Control
 var _hovered: bool = false
+var keyboard_focus: bool = false
 
 
 func _ready() -> void:
-	focus_mode = Control.FOCUS_NONE
+	focus_mode = Control.FOCUS_ALL if keyboard_focus else Control.FOCUS_NONE
+	focus_entered.connect(refresh)
+	focus_exited.connect(refresh)
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var empty := StyleBoxEmpty.new()
 	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
@@ -35,6 +38,6 @@ func _ready() -> void:
 func refresh() -> void:
 	if not is_instance_valid(_surface) or profile == null:
 		return
-	_surface.configure({"text": text, "icon_role": icon_role, "disabled": disabled, "hovered": _hovered, "pressed": is_pressed()}, role, profile, geometry)
+	_surface.configure({"text": text, "icon_role": icon_role, "disabled": disabled, "hovered": _hovered or has_focus(), "pressed": is_pressed()}, role, profile, geometry)
 	_surface.size = size
 	_surface.position = Vector2.ZERO

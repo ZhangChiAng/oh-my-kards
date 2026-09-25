@@ -11,6 +11,7 @@ captions = {
 "mulligan_replace": "更换 %d 张并开始",
 "settings": "设置",
 "restart": "重新开始",
+"main_menu": "返回主界面",
 "close": "×",
 "close_settings": "关闭设置",
 "victory": "战斗胜利",

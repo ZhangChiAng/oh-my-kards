@@ -110,11 +110,7 @@ static func gap_geometry(layout: Dictionary, row: String, index: int, count: int
 
 static func hover_pose(layout: Dictionary, base: Dictionary) -> Dictionary:
 	var result: Dictionary = base.duplicate(true)
-	var edge: float = float(layout.geometry.layout.popup_margin) * float(layout.art_scale)
-	var bounds: Rect2 = layout.viewport_rect.grow(-edge)
-	result.position = Vector2(base.position.x, to_view(layout, Vector2(0, float(layout.geometry.layout.hover_y))).y).clamp(bounds.position, bounds.end - result.size)
-	result.rotation = 0.0
-	result.scale = Vector2.ONE
+	result.position.y -= float(layout.geometry.layout.hover_lift) * float(layout.art_scale)
 	return result
 
 

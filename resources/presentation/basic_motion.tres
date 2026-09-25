@@ -5,10 +5,10 @@
 [resource]
 script = ExtResource("script")
 motion_id = "basic_motion_v1"
-detail_delay_seconds = 0.5
+detail_delay_seconds = 0.4
 insertion_seconds = 0.12
 travel_curve = "quadratic_out"
-hover_seconds = 0.12
+hover_seconds = 0.1
 cancel_seconds = 0.12
 travel_seconds = 0.24
 turn_end_seconds = 0.20

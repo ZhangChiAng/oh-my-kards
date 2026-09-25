@@ -4,6 +4,7 @@ extends Control
 
 signal end_turn_requested
 signal restart_requested
+signal main_menu_requested
 signal mulligan_confirm_requested
 signal modal_changed(open: bool)
 signal presentation_invalidated
@@ -84,8 +85,11 @@ func _process(_delta: float) -> void:
 	if _interaction.get("state", "idle") != "idle" or is_modal_open():
 		_hide_detail()
 		return
-	if Time.get_ticks_msec() - _detail_started_msec >= motion.detail_delay_seconds * 1000.0 and not _rules_detail.visible:
-		_update_detail(_detail_key)
+	var now: int = Time.get_ticks_msec()
+	if not _detail_key.is_empty() and now - _detail_started_msec >= motion.detail_delay_seconds * 1000.0:
+		var moving_hand: bool = _detail_key.begins_with("hand:") and _hover_tweens.has(_hover_id) and _hover_tweens[_hover_id].is_running()
+		if not _rules_detail.visible or moving_hand:
+			_update_detail(_detail_key)
 
 
 func _stop_row_tweens() -> void:
@@ -238,6 +242,9 @@ func _build_view() -> void:
 	var restart: BaseButton = _make_button("restart", text.caption("restart"))
 	restart.z_index = int(geometry.layout.layers.modal_button)
 	restart.pressed.connect(func(): restart_requested.emit())
+	var home: BaseButton = _make_button("main_menu", text.caption("main_menu"))
+	home.z_index = int(geometry.layout.layers.modal_button)
+	home.pressed.connect(func(): main_menu_requested.emit())
 	var close_button: BaseButton = _make_button("modal_close", text.caption("close"), "settings")
 	close_button.z_index = int(geometry.layout.layers.modal_button)
 	close_button.tooltip_text = text.caption("close_settings")
@@ -295,7 +302,7 @@ func _apply_layout() -> void:
 		if backing != null: _labels[key].add_theme_stylebox_override("background", backing)
 		else: _labels[key].remove_theme_stylebox_override("background")
 	_labels.modal_title.add_theme_font_size_override("font_size", _font_size("modal_title"))
-	for key in ["end_turn", "settings", "restart", "mulligan_confirm", "modal_close"]:
+	for key in ["end_turn", "settings", "restart", "main_menu", "mulligan_confirm", "modal_close"]:
 		var button: BaseButton = _controls[key]
 		button.profile = display_profile
 		button.geometry = geometry
@@ -339,7 +346,7 @@ func render(state: Dictionary, actions: Array, interaction: Dictionary, selected
 	for key in _presentation_hidden.keys(): presentation_hide_card(str(key))
 	_update_targets()
 	_sync_modal()
-	for key in ["end_turn", "settings", "restart", "mulligan_confirm", "modal_close"]: _controls[key].refresh()
+	for key in ["end_turn", "settings", "restart", "main_menu", "mulligan_confirm", "modal_close"]: _controls[key].refresh()
 	queue_redraw()
 	if idle and not is_modal_open(): update_hover(_cursor)
 	else:
@@ -386,6 +393,8 @@ func presentation_set_status(state: Dictionary) -> void:
 
 
 func _sync_cards() -> void:
+	_hide_detail()
+	_hover_id = ""
 	for key in _controls.keys():
 		if str(key).begins_with("hand:") or str(key).begins_with("unit:") or _is_gap(str(key)): _controls.erase(key)
 	_stop_hover()
@@ -513,6 +522,8 @@ func _sync_modal() -> void:
 	_controls.settings.disabled = is_modal_open()
 	_controls.modal_close.visible = _menu_open and not finished
 	_controls.restart.visible = shown
+	_controls.main_menu.visible = shown
+	_set_rect(_controls.main_menu, _layout.rects.modal_main_menu if finished else _layout.rects.main_menu)
 	_set_rect(_controls.restart, _layout.rects.modal_restart if finished else _layout.rects.restart)
 	if finished:
 		_labels.modal_title.text = text.caption("victory") if _state.get("winner", "") == "player" else text.caption("defeat")
@@ -526,7 +537,7 @@ func _sync_modal() -> void:
 
 func is_ui_point(point: Vector2) -> bool:
 	if is_modal_open(): return true
-	for key in ["end_turn", "restart", "mulligan_confirm", "settings", "modal_close"]:
+	for key in ["end_turn", "restart", "main_menu", "mulligan_confirm", "settings", "modal_close"]:
 		var control: Control = _controls[key]
 		if control.is_visible_in_tree() and control.get_global_rect().has_point(point): return true
 	return false
@@ -613,7 +624,19 @@ func update_hover(point: Vector2) -> void:
 	_cursor = point
 	if _state.is_empty() or _interaction.get("state", "idle") != "idle" or is_modal_open(): return
 	var key: String = pick_source(point)
-	_hover_id = key.get_slice(":", 1) if key.begins_with("hand:") else ""
+	if _state.phase == "mulligan": key = ""
+	var candidate: String = key.get_slice(":", 1) if key.begins_with("hand:") else ""
+	if candidate != _hover_id or key != _detail_key:
+		_hide_detail()
+		if _hover_id != candidate:
+			_hover_id = candidate
+			_apply_hover_pose()
+		if key.begins_with("unit:") or key.begins_with("hand:"):
+			_detail_key = key
+			_detail_started_msec = Time.get_ticks_msec()
+
+
+func _apply_hover_pose() -> void:
 	var hand: Array = _state.sides.player.hand_ids
 	for index in range(hand.size()):
 		var id: String = str(hand[index])
@@ -627,14 +650,11 @@ func update_hover(point: Vector2) -> void:
 			_hover_tweens[id] = tween
 			tween.tween_property(card, "position", target.position, motion.hover_seconds).set_trans(motion.tween_transition()).set_ease(Tween.EASE_OUT)
 			tween.tween_property(card, "rotation", target.rotation, motion.hover_seconds)
-		card.z_index = int(geometry.layout.layers.hover_card) if id == _hover_id else int(geometry.layout.layers.hand_card) + index
+			tween.finished.connect(func():
+				if _detail_key == "hand:" + id and _rules_detail.visible: _update_detail(_detail_key))
+		card.z_index = int(geometry.layout.layers.hand_card) + index
 		card.display_data.highlighted = id == _hover_id or _selected.has(id)
 		card.queue_redraw()
-	if key != _detail_key:
-		_hide_detail()
-		if _state.phase != "mulligan" and (key.begins_with("unit:") or key.begins_with("hand:")):
-			_detail_key = key
-			_detail_started_msec = Time.get_ticks_msec()
 
 
 func _hide_detail() -> void:
@@ -663,15 +683,13 @@ func _update_detail(key: String) -> void:
 	var width: float = float(_layout.rects.detail_rules.size.x)
 	var text_size: Vector2 = display_profile.visual_theme.surface.font.get_multiline_string_size(_rules_text.text, HORIZONTAL_ALIGNMENT_LEFT, width - padding * 2.0, _layout.body_font, -1, TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE)
 	var panel_size: Vector2 = _layout.rects.detail_rules.size
-	var detail_geometry: Dictionary = Layout.detail_geometry(_layout, _controls[key].screen_rect(), panel_size, key.begins_with("unit:"), _fixed_ui_rects())
+	var detail_geometry: Dictionary = Layout.detail_geometry(_layout, _controls[key].screen_rect(), panel_size, true, _fixed_ui_rects())
 	_detail_geometry = detail_geometry.duplicate(true)
 	_detail_geometry["text_height"] = text_size.y
 	_detail_geometry["padding"] = padding
-	if key.begins_with("unit:"):
-		_detail.configure(data, "full", display_profile, self.geometry.template("full"))
-		_detail.apply_pose(detail_geometry.card)
-		_detail.show()
-	else: _detail.hide()
+	_detail.configure(data, "full", display_profile, self.geometry.template("full"))
+	_detail.apply_pose(detail_geometry.card)
+	_detail.show()
 	_set_rect(_rules_detail, detail_geometry.rules)
 	_rules_text.position = Vector2.ONE * padding
 	_rules_text.size = _rules_detail.size - Vector2.ONE * padding * 2.0

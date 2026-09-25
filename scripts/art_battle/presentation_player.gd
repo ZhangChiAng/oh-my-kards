@@ -81,6 +81,14 @@ class Playback extends Control:
 	var _scale: float = 1.0
 
 
+	func _set_status(state: Dictionary) -> void:
+		var visible_state: Dictionary = state.duplicate(true)
+		if action.get("type", "") in ["deploy", "move", "attack"]:
+			for side in ["player", "ai"]:
+				visible_state.sides[side].command_points = after.sides[side].command_points
+		host.presentation_set_status(visible_state)
+
+
 	func start() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		z_index = int(host.geometry.layout.layers.animation)
@@ -89,7 +97,7 @@ class Playback extends Control:
 		run.bind_cancel(_cancel)
 		_prepare_hit()
 		_prepare_cards()
-		host.presentation_set_status(before)
+		_set_status(before)
 		_prepare_stages()
 		for value in _stages: _duration += float(value.duration)
 		if _stages.is_empty():
@@ -202,7 +210,7 @@ class Playback extends Control:
 
 	func _enter_stage() -> void:
 		var stage_name: String = _stages[_index].name
-		if stage_name == "turn_start": host.presentation_set_status(_before_hit_state())
+		if stage_name == "turn_start": _set_status(_before_hit_state())
 		if stage_name in ["turn_start", "turn_end"]:
 			if _turn_label == null:
 				var placement: Dictionary = host.geometry.layout.animation
@@ -211,7 +219,7 @@ class Playback extends Control:
 			_turn_label.show()
 		elif _turn_label != null: _turn_label.hide()
 		if stage_name == "attack_hit":
-			host.presentation_set_status(_hit_state)
+			_set_status(_hit_state)
 			for key in _entries:
 				var item: Dictionary = _entries[key]
 				if not item.added: _update_card(item, str(key), _hit_state)
@@ -223,7 +231,7 @@ class Playback extends Control:
 				_labels.append(_label(host.text.caption("damage") % amount, point, Vector2(card.size.x, float(host.geometry.layout.animation.damage_height) * _scale), int(host.geometry.layout.animation.damage_font), true))
 		if stage_name in ["travel", "attack_recover"]:
 			var display_state: Dictionary = _before_hit_state() if stage_name == "travel" else after
-			host.presentation_set_status(display_state)
+			_set_status(display_state)
 			for key in _entries:
 				var item: Dictionary = _entries[key]
 				if not item.removed and item.flipped: _update_card(item, str(key), display_state)
@@ -363,7 +371,7 @@ class Playback extends Control:
 		_entries.clear()
 		if is_instance_valid(host):
 			host.presentation_restore()
-			host.presentation_set_status(after)
+			_set_status(after)
 		run.complete(was_cancelled)
 		queue_free()
 
