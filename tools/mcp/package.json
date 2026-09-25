@@ -1,0 +1,12 @@
+{
+  "name": "oh-my-kards-dev-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pinned local Godot MCP development tools",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@satelliteoflove/godot-mcp": "4.1.11",
+    "@ryanmazzolini/minimal-godot-mcp": "0.1.6"
+  }
+}

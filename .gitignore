@@ -1,0 +1,8 @@
+.godot/
+.codex/config.toml
+tools/godot/
+tools/downloads/
+tools/mcp/node_modules/
+tools/mcp/.npm-cache/
+artifacts/
+*.tmp
