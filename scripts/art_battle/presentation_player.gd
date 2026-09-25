@@ -79,11 +79,14 @@ class Playback extends Control:
 	var _labels: Array[Control] = []
 	var _turn_label: Control
 	var _scale: float = 1.0
+	var _effect_mode: bool = false
+	var _event_state: Dictionary = {}
+	var _drawn_entries: Array[String] = []
 
 
 	func _set_status(state: Dictionary) -> void:
 		var visible_state: Dictionary = state.duplicate(true)
-		if action.get("type", "") in ["deploy", "move", "attack"]:
+		if action.get("type", "") in ["deploy", "move", "attack", "order", "choose"]:
 			for side in ["player", "ai"]:
 				visible_state.sides[side].command_points = after.sides[side].command_points
 		host.presentation_set_status(visible_state)
@@ -182,6 +185,11 @@ class Playback extends Control:
 
 
 	func _prepare_stages() -> void:
+		for event in events:
+			if str(event.get("type", "")) in ["ability_triggered", "effect_damage", "healed", "stats_modified", "status_applied", "status_expired", "order_played"]: _effect_mode = true
+		if _effect_mode:
+			_prepare_effect_stages()
+			return
 		if action.get("type", "") == "attack":
 			_add_stage("attack_windup", motion.attack_windup_seconds)
 			_add_stage("attack_line", motion.attack_line_seconds)
@@ -209,6 +217,9 @@ class Playback extends Control:
 
 
 	func _enter_stage() -> void:
+		if _effect_mode:
+			_enter_effect_stage()
+			return
 		var stage_name: String = _stages[_index].name
 		if stage_name == "turn_start": _set_status(_before_hit_state())
 		if stage_name in ["turn_start", "turn_end"]:
@@ -273,6 +284,9 @@ class Playback extends Control:
 
 
 	func _apply_stage(fraction: float) -> void:
+		if _effect_mode:
+			_apply_effect_stage(fraction)
+			return
 		var stage_name: String = _stages[_index].name
 		var t: float = clampf(fraction, 0.0, 1.0)
 		var eased: float = motion.sample_curve(t)
@@ -328,7 +342,7 @@ class Playback extends Control:
 			var from: Vector2 = source.position + source.size * 0.5
 			var to: Vector2 = target.position + target.size * 0.5
 			draw_line(from, from.lerp(to, _line_progress), host.display_profile.visual_theme.color("line"), maxf(1.0, float(host.display_profile.visual_theme.surface.strokes.attack_line_width) * _scale), bool(host.display_profile.visual_theme.surface.strokes.antialiased))
-		if str(_stages[_index].name) in ["attack_hit", "attack_recover"]:
+		if not _effect_mode and str(_stages[_index].name) in ["attack_hit", "attack_recover"]:
 			for key in _casualties:
 				if not _entries.has(key): continue
 				var card: Control = _entries[key].node
@@ -404,3 +418,199 @@ class Playback extends Control:
 
 	func _side_name(side: String) -> String:
 		return host.text.caption("side_player" if side == "player" else "side_enemy")
+
+
+	func _prepare_effect_stages() -> void:
+		_event_state = before.duplicate(true)
+		for id in after.get("units", {}):
+			if not _event_state.units.has(id):
+				_event_state.units[id] = after.units[id].duplicate(true)
+				_event_state.units[id].hp = int(after.units[id].get("max_hp", 0))
+		var index: int = 0
+		while index < events.size():
+			var event: Dictionary = events[index]
+			var type: String = str(event.get("type", ""))
+			var batch: Array = [event]
+			if type == "effect_damage" and event.has("batch_id"):
+				while index + 1 < events.size() and events[index + 1].get("type", "") == type and events[index + 1].get("batch_id", -1) == event.batch_id:
+					index += 1
+					batch.append(events[index])
+			if type in ["units_battled", "hq_attacked"]:
+				_add_stage("attack_windup", motion.attack_windup_seconds)
+				_stages.back()["state"] = _event_state.duplicate(true)
+				_stages.back()["events"] = []
+				_add_stage("attack_line", motion.attack_line_seconds)
+				_stages.back()["state"] = _event_state.duplicate(true)
+				_stages.back()["events"] = []
+			for item in batch: _apply_public_event(item)
+			var stage: String = type
+			var seconds: float = motion.attack_hit_seconds
+			if type in ["unit_deployed", "unit_moved", "card_drawn"]:
+				stage = "travel" if type != "card_drawn" else "card_drawn"
+				seconds = motion.travel_seconds
+			elif type in ["units_battled", "hq_attacked"]: stage = "attack_hit"
+			elif type == "turn_started": seconds = motion.turn_start_seconds
+			elif type == "turn_ended": seconds = motion.turn_end_seconds
+			elif type == "order_played": seconds = motion.travel_seconds
+			elif not type in ["effect_damage", "healed", "stats_modified", "status_applied", "status_expired", "ability_triggered", "unit_destroyed", "hand_overflow", "fatigue_damage"]:
+				index += 1
+				continue
+			_add_stage(stage, seconds)
+			_stages.back()["state"] = _event_state.duplicate(true)
+			_stages.back()["events"] = batch
+			index += 1
+		_add_stage("effect_settle", motion.attack_recover_seconds)
+		_stages.back()["state"] = after.duplicate(true)
+		_stages.back()["events"] = []
+
+
+	func _apply_public_event(event: Dictionary) -> void:
+		var type: String = str(event.get("type", ""))
+		var id: String = str(event.get("unit_id", ""))
+		var side: String = str(event.get("side", ""))
+		match type:
+			"units_battled":
+				_event_hp(str(event.attacker_id), int(event.attacker_hp))
+				_event_hp(str(event.target_id), int(event.target_hp))
+			"hq_attacked", "effect_damage", "healed": _event_hp(str(event.target_id), int(event.remaining_hp))
+			"fatigue_damage": _event_hp("hq:" + side, int(event.remaining_hp))
+			"stats_modified":
+				if _event_state.units.has(id):
+					for key in ["attack", "hp", "max_hp"]: _event_state.units[id][key] = event[key]
+			"status_applied", "status_expired":
+				if _event_state.units.has(id) and str(event.get("status", "")) == "suppressed": _event_state.units[id].suppressed = type == "status_applied"
+			"unit_deployed", "unit_moved":
+				if after.units.has(id):
+					var previous_hp: int = int(_event_state.units[id].get("hp", after.units[id].max_hp))
+					_event_state.units[id].zone = "support" if type == "unit_deployed" else "frontline"
+					_event_state.units[id].hp = previous_hp
+					if type == "unit_deployed":
+						_event_state.sides[side].hand_count = maxi(0, int(_event_state.sides[side].hand_count) - 1)
+			"order_played":
+				if _event_state.sides.has(side):
+					_event_state.sides[side].hand_count = maxi(0, int(_event_state.sides[side].hand_count) - 1)
+					_event_state.sides[side].discard_count += 1
+			"unit_destroyed":
+				if _event_state.units.has(id):
+					var owner: String = str(_event_state.units[id].owner)
+					_event_state.units[id].zone = "discard"
+					_event_state.sides[owner].discard_count += 1
+			"card_drawn":
+				if _event_state.sides.has(side):
+					_event_state.sides[side].draw_count = maxi(0, int(_event_state.sides[side].draw_count) - 1)
+					_event_state.sides[side].hand_count += 1
+			"hand_overflow":
+				if _event_state.sides.has(side):
+					_event_state.sides[side].draw_count = maxi(0, int(_event_state.sides[side].draw_count) - 1)
+					_event_state.sides[side].discard_count += 1
+			"turn_started":
+				_event_state.turn = event.turn
+				_event_state.active_side = side
+
+
+	func _event_hp(id: String, hp: int) -> void:
+		if id.begins_with("hq:"): _event_state.sides[id.trim_prefix("hq:")].hq_hp = hp
+		elif _event_state.units.has(id): _event_state.units[id].hp = hp
+
+
+	func _enter_effect_stage() -> void:
+		for label in _labels:
+			if is_instance_valid(label): label.queue_free()
+		_labels.clear()
+		var stage: Dictionary = _stages[_index]
+		var state: Dictionary = stage.state
+		_set_status(state)
+		for key in _entries:
+			var item: Dictionary = _entries[key]
+			if stage.name == "effect_settle": item.from = item.node.pose()
+			if item.flipped and item.node.visible: _update_card(item, str(key), state)
+		for event in stage.events:
+			var type: String = str(event.get("type", ""))
+			var id: String = str(event.get("unit_id", ""))
+			if type == "unit_deployed" and _entries.has("unit:" + id):
+				var item: Dictionary = _entries["unit:" + id]
+				_update_card(item, "unit:" + id, state)
+				item.flipped = true
+				item.node.show()
+			elif type == "card_drawn":
+				var prefix: String = "back:ai:" if event.side == "ai" else "hand:"
+				for key in _entries:
+					if str(key).begins_with(prefix) and _entries[key].added and not _drawn_entries.has(str(key)):
+						_drawn_entries.append(str(key))
+						_entries[key].node.show()
+						stage["draw_key"] = key
+						break
+			elif type == "order_played":
+				var key: String = "hand:" + id
+				var extent: Vector2 = host.geometry.template("full").size * _scale
+				var pose: Dictionary = {"position": size * 0.5 - extent * 0.5, "size": extent, "rotation": 0.0, "scale": Vector2.ONE}
+				if not _entries.has(key):
+					var card: Control = host.presentation_create_card(key, after, pose)
+					_entries[key] = {"node": card, "from": pose, "to": pose, "added": false, "removed": true, "flipped": true}
+				_entries[key].node.show()
+				_entries[key].to = pose
+				stage["order_key"] = key
+				for back_key in _entries:
+					if str(back_key).begins_with("back:ai:") and _entries[back_key].removed:
+						_entries[back_key].node.modulate.a = 0.0
+						_entries[back_key]["destroying"] = true
+			elif type == "unit_destroyed":
+				if _entries.has("unit:" + id): _entries["unit:" + id]["destroying"] = true
+			elif type in ["effect_damage", "healed", "stats_modified", "status_applied", "status_expired", "ability_triggered", "units_battled", "hq_attacked", "fatigue_damage", "hand_overflow"]:
+				_effect_labels(event)
+
+
+	func _effect_labels(event: Dictionary) -> void:
+		var type: String = str(event.type)
+		var id: String = str(event.get("target_id", event.get("unit_id", event.get("source_id", ""))))
+		if type == "fatigue_damage": id = "hq:" + str(event.side)
+		var key: String = id if id.begins_with("hq:") else "unit:" + id
+		var caption: String = ""
+		match type:
+			"effect_damage", "hq_attacked", "fatigue_damage": caption = "−%d" % int(event.damage)
+			"healed": caption = "+%d" % int(event.amount)
+			"stats_modified": caption = "攻血变化"
+			"status_applied": caption = "压制"
+			"status_expired": caption = "压制解除"
+			"ability_triggered": caption = {"deploy": "部署", "aftermath": "余波", "play": "指令"}.get(str(event.trigger), "效果")
+			"hand_overflow": caption = "手牌已满"
+			"units_battled":
+				_effect_labels({"type": "effect_damage", "target_id": event.attacker_id, "damage": event.damage_to_attacker})
+				_effect_labels({"type": "effect_damage", "target_id": event.target_id, "damage": event.damage_to_target})
+				return
+		var point: Vector2 = size * 0.5 - Vector2(80, 20) * _scale
+		var extent := Vector2(160, 40) * _scale
+		if _entries.has(key):
+			var card: Control = _entries[key].node
+			point = card.position + Vector2(0.0, card.size.y * 0.35)
+			extent.x = card.size.x
+		if not caption.is_empty(): _labels.append(_label(caption, point, extent, int(host.geometry.layout.animation.damage_font)))
+
+
+	func _apply_effect_stage(fraction: float) -> void:
+		var stage: Dictionary = _stages[_index]
+		var t: float = clampf(fraction, 0.0, 1.0)
+		var eased: float = motion.sample_curve(t)
+		run.update_stage(str(stage.name), t, _elapsed, _duration)
+		if stage.name == "attack_windup" and _entries.has(_attack_from): _entries[_attack_from].node.position = _entries[_attack_from].from.position + _lunge * eased
+		elif stage.name == "attack_line": _line_progress = t
+		elif stage.name == "order_played" and stage.has("order_key"):
+			var item: Dictionary = _entries[stage.order_key]
+			_apply_pose(item.node, _mix_pose(item.from, item.to, eased))
+		elif stage.name == "card_drawn" and stage.has("draw_key"):
+			var item: Dictionary = _entries[stage.draw_key]
+			_apply_pose(item.node, _mix_pose(item.from, item.to, eased))
+		elif stage.name in ["travel", "effect_settle"]:
+			for key in _entries:
+				var item: Dictionary = _entries[key]
+				if not item.node.visible: continue
+				if item.added and str(key).begins_with("hand:") and not _drawn_entries.has(str(key)): continue
+				if not item.removed: _apply_pose(item.node, _mix_pose(item.from, item.to, eased))
+				elif stage.name == "effect_settle": item.node.modulate.a = 0.0 if item.get("destroying", false) else 1.0 - t
+			_set_frontline(eased)
+		for event in stage.events:
+			if event.get("type", "") == "unit_destroyed":
+				var key: String = "unit:" + str(event.unit_id)
+				if _entries.has(key): _entries[key].node.modulate.a = 1.0 - t
+		if not stage.name in ["attack_windup", "attack_line"]: _line_progress = 0.0
+		queue_redraw()

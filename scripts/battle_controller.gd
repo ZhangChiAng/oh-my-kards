@@ -23,6 +23,7 @@ var _animation_serial: int = 0
 var _mulligan_selected: Array[String] = []
 var _mulligan_pressed: String = ""
 var _relayout_queued: bool = false
+var _pending_deploy_pose: Dictionary = {}
 
 
 static func _idle_interaction() -> Dictionary:
@@ -42,7 +43,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if _interaction.state in ["pressed", "dragging"]:
+	if _interaction.state in ["pressed", "dragging", "choosing_deploy"]:
 		var state: Dictionary = rules.snapshot()
 		if battle_number != _interaction_battle or state.turn != _interaction_turn or state.phase != "active" or state.active_side != "player":
 			_cancel_drag(false)
@@ -98,7 +99,7 @@ func _input(event: InputEvent) -> void:
 		if _interaction.state == "pressed" and _drag_distance() > interaction_config.drag_threshold:
 			_interaction.state = "dragging"
 			_refresh_ui()
-		if _interaction.state == "dragging":
+		if _interaction.state in ["dragging", "choosing_deploy", "choosing_choice"]:
 			_update_drag()
 			get_viewport().set_input_as_handled()
 		elif _interaction.state == "idle": _view.update_hover(_cursor)
@@ -119,6 +120,10 @@ func _input(event: InputEvent) -> void:
 		return
 	if _view_state.get("phase", "") == "mulligan":
 		_handle_mulligan_input(event)
+		return
+	if _interaction.state in ["choosing_deploy", "choosing_choice"]:
+		if not event.pressed: _finish_target_choice()
+		get_viewport().set_input_as_handled()
 		return
 	if event.pressed:
 		if _interaction.state != "idle" or not _player_turn(): return
@@ -227,7 +232,15 @@ func _source_is_legal(id: String) -> bool:
 
 func _targets_for(id: String) -> Array:
 	var result: Array = []
+	if _interaction.state == "choosing_deploy":
+		for candidate in _interaction.get("candidate_actions", []):
+			var target_key: String = _effect_target_key(str(candidate.get("target_id", "")))
+			if not result.has(target_key): result.append(target_key)
+		return result
 	for action in rules.legal_actions("player"):
+		if str(action.get("type", "")) == "choose":
+			result.append(_effect_target_key(str(action.target_id)))
+			continue
 		if str(action.get("unit_id", "")) != id: continue
 		var key: String = _action_target_key(action)
 		if not result.has(key): result.append(key)
@@ -241,7 +254,13 @@ func _action_target_key(action: Dictionary) -> String:
 		"attack":
 			var target: String = str(action.target_id)
 			return target if target.begins_with("hq:") else "unit:" + target
+		"order": return _effect_target_key(str(action.get("target_id", ""))) if action.has("target_id") else "cast:player"
+		"choose": return _effect_target_key(str(action.target_id))
 	return ""
+
+
+func _effect_target_key(id: String) -> String:
+	return id if id.begins_with("hq:") or id.begins_with("row:") else "unit:" + id
 
 
 func _update_drag() -> void:
@@ -253,11 +272,21 @@ func _update_drag() -> void:
 func _finish_drag() -> void:
 	_update_drag()
 	var action: Dictionary = {}
+	var target_choices: Array = []
 	if _interaction_battle == battle_number and _interaction_turn == int(rules.snapshot().turn):
 		for candidate in rules.legal_actions("player"):
 			if str(candidate.get("unit_id", "")) == str(_interaction.source_id) and _action_target_key(candidate) == str(_interaction.hover_target_key):
 				action = candidate
-				break
+				if candidate.type == "deploy" and candidate.has("target_id"): target_choices.append(candidate)
+	if not target_choices.is_empty():
+		_pending_deploy_pose = _view.drag_pose()
+		_interaction.state = "choosing_deploy"
+		_interaction.candidate_actions = target_choices
+		_interaction.hover_target_key = ""
+		_interaction.legal_target_keys = _targets_for(str(_interaction.source_id))
+		_refresh_ui()
+		_update_drag()
+		return
 	if action.is_empty(): _cancel_drag(true)
 	else:
 		var released: Dictionary = _view.drag_pose()
@@ -265,8 +294,24 @@ func _finish_drag() -> void:
 		_player_command(action, released)
 
 
+func _finish_target_choice() -> void:
+	_update_drag()
+	var selected: Dictionary = {}
+	var candidates: Array = _interaction.get("candidate_actions", []) if _interaction.state == "choosing_deploy" else rules.legal_actions("player")
+	for candidate in candidates:
+		if candidate.has("target_id") and _effect_target_key(str(candidate.target_id)) == str(_interaction.hover_target_key):
+			selected = candidate
+			break
+	if selected.is_empty(): return
+	var released: Dictionary = _pending_deploy_pose.duplicate(true)
+	_clear_interaction()
+	if selected.type == "choose": await _execute_visual(selected, "player")
+	else: _player_command(selected, released)
+
+
 func _cancel_drag(animate: bool) -> void:
-	if not _interaction.state in ["pressed", "dragging"]: return
+	if _interaction.state == "choosing_choice": return
+	if not _interaction.state in ["pressed", "dragging", "choosing_deploy"]: return
 	var id: String = str(_interaction.source_id)
 	var was_dragging: bool = _interaction.state == "dragging"
 	var drag_pose: Dictionary = _view.drag_pose()
@@ -288,6 +333,7 @@ func _cancel_drag(animate: bool) -> void:
 
 func _clear_interaction() -> void:
 	_interaction = _idle_interaction()
+	_pending_deploy_pose.clear()
 	if is_instance_valid(_view): _view.clear_drag()
 
 
@@ -359,8 +405,14 @@ func _refresh_ui() -> void:
 	if not is_instance_valid(_view): return
 	_view_state = rules.side_view("player")
 	_legal_actions = rules.legal_actions("player")
-	if _interaction.state in ["pressed", "dragging"] and (not _view_state.units.has(_interaction.source_id) or _view_state.turn != _interaction_turn or _view_state.phase != "active"):
+	if _interaction.state in ["pressed", "dragging", "choosing_deploy"] and (not _view_state.units.has(_interaction.source_id) or _view_state.turn != _interaction_turn or _view_state.phase != "active"):
 		_clear_interaction()
+	if _view_state.phase == "waiting_choice" and _interaction.state == "idle" and _view_state.get("pending_choice", {}).get("owner", "") == "player":
+		var source_id: String = str(_view_state.pending_choice.get("source_id", ""))
+		_interaction = {"state": "choosing_choice", "source_id": source_id, "source_zone": "effect", "hover_target_key": "", "legal_target_keys": [], "presentation_busy": false}
+		_interaction.legal_target_keys = _targets_for(source_id)
+		_source_pose = _view.source_pose("unit:" + source_id)
+		if _source_pose.is_empty(): _source_pose = {"position": _view.size * 0.5, "size": Vector2.ZERO}
 	_view.render(_view_state, _legal_actions, _interaction, _mulligan_selected)
 
 

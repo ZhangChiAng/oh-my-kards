@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="oh-my-kards"
-config/description="十九张单位牌、五类兵种与能量，争夺前线的回合制对战。"
+config/description="四十张固定牌组、五类兵种与六种首批机制，争夺前线的回合制对战。"
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 

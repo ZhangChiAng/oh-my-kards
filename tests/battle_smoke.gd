@@ -1,9 +1,10 @@
 extends SceneTree
-## Focused domain checks. Fixtures never change the nineteen-card product deck.
+## Domain checks inject definitions and states; they never open the personal library.
 
 const Rules = preload("res://scripts/battle_rules.gd")
 const Policy = preload("res://scripts/ai_policy.gd")
 const Catalog = preload("res://scripts/card_catalog.gd")
+const Schema = preload("res://scripts/card_schema.gd")
 const TEST_SEED: int = 20260917
 const UNIT_TYPES: Array[String] = ["infantry", "tank", "artillery", "fighter", "bomber"]
 
@@ -20,7 +21,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_read_arguments()
-	_test_reserve_definition()
+	_test_factory_definitions()
 	_test_opening_and_views()
 	_test_support_positions()
 	_test_frontline_positions_and_departures()
@@ -28,6 +29,11 @@ func _run() -> void:
 	_test_combat_matrix_and_cover()
 	_test_overflow_fatigue_and_finish()
 	_test_simple_ai()
+	_test_keywords_and_orders()
+	_test_modifiers_and_suppression()
+	_test_aftermath_resolution()
+	_test_choice_and_conditions()
+	_test_effect_ai_and_privacy()
 	_test_complete_battle()
 	DirAccess.make_dir_recursive_absolute(_output_dir)
 	_write_result()
@@ -143,7 +149,9 @@ func _consistent(state: Dictionary) -> bool:
 		seen.append(id)
 	for id in state.units:
 		var unit: Dictionary = state.units[id]
-		if unit.instance_id != id or unit.hp < 0 or unit.hp > unit.max_hp:
+		if unit.instance_id != id:
+			return false
+		if unit.get("card_type", "unit") == "unit" and (unit.hp < 0 or unit.hp > unit.max_hp):
 			return false
 	return seen.size() == state.units.size()
 
@@ -153,41 +161,35 @@ func _choose(rules: Rules) -> Dictionary:
 	return Policy.new().choose_action(rules.legal_actions(actor), rules.side_view(actor))
 
 
-func _test_reserve_definition() -> void:
-	_check(Catalog.CARDS.size() == 11, "catalogue: ten preset definitions plus one reserve militia")
-	_check(Catalog.card("militia") == {"card_id": "militia", "name": "民兵", "unit_type": "infantry", "deploy_cost": 1, "action_cost": 1, "attack": 2, "max_hp": 2},
-		"catalogue: militia has the approved 1/1/2/2 infantry definition")
-	_check(Catalog.preset_deck().size() == 19 and not Catalog.preset_deck().has("militia"), "catalogue: reserve militia is excluded from the nineteen-card preset")
-	_check(Catalog.card("pathfinder").attack == 1 and Catalog.card("pathfinder").name == "边境侦察队", "catalogue: militia does not replace pathfinder")
-	var opening: Dictionary = _fresh().snapshot()
-	for side in ["player", "ai"]:
-		var count: int = 0
-		var militia_present: bool = false
-		for unit in opening.units.values():
-			if unit.owner != side: continue
-			count += 1
-			militia_present = militia_present or unit.card_id == "militia"
-		_check(count == 19 and not militia_present, "opening: " + side + " still receives nineteen preset units without militia")
+func _test_factory_definitions() -> void:
+	_check(Catalog.CARDS.size() == 20 and Catalog.preset_deck().size() == 40, "catalogue: twenty definitions and forty-card fixture deck")
+	var orders: int = 0
+	for id in Catalog.CARDS:
+		var definition: Dictionary = Schema.normalize_definition(Catalog.CARDS[id])
+		_check(Schema.validate_definition(definition).is_empty(), "catalogue: valid definition " + id)
+		_check(Catalog.preset_deck().count(id) == 2, "catalogue: two copies of " + id)
+		if definition.card_type == "order": orders += 1
+	_check(orders == 6, "catalogue: six orders and fourteen units")
 
 
 func _test_opening_and_views() -> void:
 	var rules: Rules = _fresh()
 	var opening: Dictionary = rules.snapshot()
-	_check(opening.phase == "mulligan" and opening.turn == 0 and opening.units.size() == 38, "opening: separate HQs and nineteen units each")
+	_check(opening.phase == "mulligan" and opening.turn == 0 and opening.units.size() == 80, "opening: separate HQs and forty cards each")
 	_check(_fresh().snapshot() == opening, "opening: same seed reproduces state")
 	var compositions: Dictionary = {}
 	for side in ["player", "ai"]:
 		var participant: Dictionary = opening.sides[side]
 		var count: int = 4 if side == opening.first_side else 5
-		_check(participant.hq_hp == 20 and participant.hq_index == 0 and participant.hand_count == count and participant.draw_count == 19 - count,
+		_check(participant.hq_hp == 20 and participant.hq_index == 0 and participant.hand_count == count and participant.draw_count == 40 - count,
 			"opening: HQ and initial hand " + side)
 		var composition: Dictionary = {}
 		for unit in opening.units.values():
 			if unit.owner == side:
 				composition[unit.card_id] = int(composition.get(unit.card_id, 0)) + 1
 		compositions[side] = composition
-	_check(compositions.player == compositions.ai and compositions.player.size() == 10 and compositions.player.eclipse == 1,
-		"opening: equal fixed ten-definition presets")
+	_check(compositions.player == compositions.ai and compositions.player.size() == 20,
+		"opening: equal fixed twenty-definition presets")
 	var hand: Array = opening.sides.player.hand_ids
 	_reject(rules, {"type": "deploy", "unit_id": hand[0]}, "opening: play waits for mulligan")
 	_reject(rules, {"type": "mulligan", "unit_ids": [hand[0], hand[0]]}, "opening: duplicate replacement")
@@ -373,6 +375,19 @@ func _test_combat_matrix_and_cover() -> void:
 
 func _test_overflow_fatigue_and_finish() -> void:
 	var rules: Rules = _fixture("ai")
+	var opening_config: Resource = preload("res://resources/rules/approved_rules.tres").duplicate(true)
+	opening_config.hq_max_hp = 1
+	opening_config.first_hand_count = 1
+	opening_config.second_hand_count = 1
+	var opening_result: Dictionary = rules.setup(TEST_SEED, opening_config, {}, {"player": [], "ai": []})
+	var opening_state: Dictionary = rules.snapshot()
+	_check(opening_result.accepted and opening_state.phase == "finished" and opening_state.winner == "ai", "opening fatigue: first draw ends battle")
+	_check(opening_state.sides.player.hq_hp == 0 and opening_state.sides.player.fatigue == 1
+		and opening_state.sides.ai.hq_hp == 1 and opening_state.sides.ai.fatigue == 0, "opening fatigue: terminal result cancels other side's opening draw")
+	_check(_events_of(opening_result.events, "fatigue_damage").size() == 1
+		and _events_of(opening_result.events, "battle_finished").size() == 1
+		and opening_result.events.back().type == "battle_finished", "opening fatigue: one fatigue batch and one final event")
+	rules = _fixture("ai")
 	for index in range(9):
 		_put(rules, "hand%d" % index, "player", "hand")
 	_put(rules, "new", "player", "draw")
@@ -456,13 +471,15 @@ func _test_complete_battle() -> void:
 		var opening: Dictionary = policy.choose_action(rules.legal_actions(side), rules.side_view(side))
 		_commit(rules, opening, "battle: opening", side)
 	var steps: int = 0
-	for index in range(600):
+	var seen_types: Dictionary = {}
+	for index in range(1200):
 		var before: Dictionary = rules.snapshot()
 		if before.phase == "finished":
 			break
 		var actor: String = str(before.active_side)
 		var legal: Array = rules.legal_actions(actor)
 		var action: Dictionary = policy.choose_action(legal, rules.side_view(actor))
+		seen_types[str(action.get("type", ""))] = true
 		var failures_before: int = _failures.size()
 		_check(legal.has(action) and rules.snapshot() == before, "battle: policy only selects legal actions and never mutates state")
 		var after: Dictionary = _commit(rules, action, "battle: %03d/%s/%s" % [index, actor, action.type], actor)
@@ -471,7 +488,8 @@ func _test_complete_battle() -> void:
 		if _failures.size() > failures_before: _trace.append({"step": "failure", "before": before, "after": after})
 		steps += 1
 	var final: Dictionary = rules.snapshot()
-	_check(final.phase == "finished" and steps > 10 and final.units.size() == 38, "battle: a complete nineteen-card game reaches a winner")
+	_check(final.phase == "finished" and steps > 10 and final.units.size() == 80, "battle: a complete forty-card game reaches a result")
+	_check(seen_types.has("order") and seen_types.has("deploy") and seen_types.has("attack") and seen_types.has("move"), "battle: AI exercises orders and every battlefield action")
 	_record(rules, "battle/finished")
 
 
@@ -489,3 +507,313 @@ func _write_result() -> void:
 	output.store_string(JSON.stringify(result, "\t"))
 	output.close()
 	print("RULES_RESULT " + JSON.stringify({"run_id": _run_id, "status": result.status, "assertions": _assertions, "failures": _failures.size(), "path": result_path}))
+
+
+func _defined(rules: Rules, id: String, owner: String, zone: String, definition: Dictionary, sequence: int = 0) -> void:
+	var card: Dictionary = Schema.normalize_definition(definition)
+	_check(Schema.validate_definition(card, true).is_empty(), "fixture definition validates: " + id)
+	card.merge({"instance_id": id, "card_id": "test-" + id, "owner": owner,
+		"moved_this_turn": false, "attacked_this_turn": false, "deployed_this_turn": false}, true)
+	if card.card_type == "unit": card.hp = card.max_hp
+	if sequence > 0: card.entered_sequence = sequence
+	rules._state.units[id] = card
+	if zone == "frontline": rules._state.frontline_ids.append(id)
+	else: rules._state.sides[owner][zone + "_ids"].append(id)
+
+
+func _unit_definition(effects: Array = [], trigger: String = "aftermath", hp: int = 1) -> Dictionary:
+	var card: Dictionary = {"name": "测试单位", "unit_type": "infantry", "deploy_cost": 1, "action_cost": 1, "attack": 1, "max_hp": hp}
+	if not effects.is_empty(): card.abilities = [{"trigger": trigger, "effects": effects}]
+	return card
+
+
+func _order(rules: Rules, id: String, effects: Array, owner: String = "player", cost: int = 1) -> void:
+	_defined(rules, id, owner, "hand", {"card_type": "order", "name": "测试指令", "deploy_cost": cost,
+		"abilities": [{"trigger": "play", "effects": effects}]})
+
+
+func _events_of(events: Array, kind: String) -> Array:
+	return events.filter(func(event: Dictionary): return event.type == kind)
+
+
+func _test_keywords_and_orders() -> void:
+	for kind in UNIT_TYPES:
+		var rules: Rules = _fixture()
+		_put(rules, "raid", "player", "hand", kind, 3, 7, 2, 2)
+		rules._state.units.raid.keywords = {"raid": true}
+		_commit(rules, {"type": "deploy", "unit_id": "raid"}, "raid: deploy " + kind)
+		var state: Dictionary = _commit(rules, {"type": "move", "unit_id": "raid"}, "raid: immediate move " + kind)
+		_check(state.sides.player.command_points == 8, "raid: deployment and movement both paid")
+		if kind == "tank":
+			state = _commit(rules, {"type": "attack", "unit_id": "raid", "target_id": "hq:ai"}, "raid: tank attacks after moving")
+			_check(state.sides.player.command_points == 6, "raid: tank pays separately for attack")
+		else:
+			_reject(rules, {"type": "attack", "unit_id": "raid", "target_id": "hq:ai"}, "raid: does not grant extra actions")
+	var rules: Rules = _fixture()
+	_put(rules, "attacker", "player", "frontline", "tank", 3, 9)
+	_put(rules, "left", "ai", "support")
+	_put(rules, "middle", "ai", "support")
+	_put(rules, "right", "ai", "support")
+	rules._state.units.left.keywords = {"guard": true}
+	rules._state.units.right.keywords = {"guard": true}
+	rules._state.sides.ai.hq_index = 1
+	_reject(rules, {"type": "attack", "unit_id": "attacker", "target_id": "hq:ai"}, "guard: HQ is an adjacent slot")
+	_reject(rules, {"type": "attack", "unit_id": "attacker", "target_id": "middle"}, "guard: adjacent unit protected")
+	_check(rules.validation_reason({"type": "attack", "unit_id": "attacker", "target_id": "left"}).is_empty(), "guard: guards never guard each other")
+	_put(rules, "gun", "player", "support", "artillery", 1, 9)
+	_put(rules, "plane", "player", "support", "bomber", 1, 9)
+	for source in ["gun", "plane"]:
+		_check(rules.validation_reason({"type": "attack", "unit_id": source, "target_id": "middle"}).is_empty(), "guard: artillery and bomber bypass")
+	_put(rules, "fighter", "ai", "support", "fighter")
+	_reject(rules, {"type": "attack", "unit_id": "plane", "target_id": "middle"}, "guard: fighter restriction still applies to bomber")
+	rules = _fixture()
+	_put(rules, "armored_attacker", "player", "support", "infantry", 3, 8)
+	_put(rules, "armored_defender", "ai", "frontline", "infantry", 3, 8)
+	rules._state.units.armored_attacker.keywords = {"armor": 2}
+	rules._state.units.armored_defender.keywords = {"armor": 1, "guard": true}
+	var state: Dictionary = _commit(rules, {"type": "attack", "unit_id": "armored_attacker", "target_id": "armored_defender"}, "armor: attack and counter")
+	_check(state.units.armored_attacker.hp == 7 and state.units.armored_defender.hp == 6, "armor: both directions use defender armor")
+	_order(rules, "damage", [{"op": "damage", "target": "chosen_enemy_unit", "amount": 2}])
+	state = _commit(rules, {"type": "order", "unit_id": "damage", "target_id": "armored_defender"}, "armor: effect bypasses armor and guard")
+	_check(state.units.armored_defender.hp == 4 and state.sides.player.discard_ids == ["damage"], "order: full effect damage and discard")
+	rules = _fixture()
+	_defined(rules, "deploy_target", "player", "hand", _unit_definition([{"op": "damage", "target": "chosen_enemy_unit", "amount": 2}], "deploy"))
+	_commit(rules, {"type": "deploy", "unit_id": "deploy_target"}, "deploy: no legal target still plays")
+	_order(rules, "requires_target", [{"op": "damage", "target": "chosen_enemy_unit", "amount": 2}])
+	_reject(rules, {"type": "order", "unit_id": "requires_target"}, "order: no legal target cannot play")
+	for index in range(3): _put(rules, "full-%d" % index, "player", "support")
+	_put(rules, "enemy", "ai", "frontline")
+	state = _commit(rules, {"type": "order", "unit_id": "requires_target", "target_id": "enemy"}, "order: usable with full support row")
+	_check(state.sides.player.support_count == 4 and state.units.enemy.hp == 5, "order: consumes no unit slot")
+	_record(rules, "keywords-and-orders")
+
+
+func _test_modifiers_and_suppression() -> void:
+	var rules: Rules = _fixture()
+	_put(rules, "friend", "player", "support", "infantry", 2, 5)
+	rules._state.units.friend.hp = 2
+	_order(rules, "buff", [{"op": "modify_stats", "target": "chosen_friendly_unit", "attack": 1, "health": 2}])
+	var state: Dictionary = _commit(rules, {"type": "order", "unit_id": "buff", "target_id": "friend"}, "modifiers: buff injured unit")
+	_check(state.units.friend.base_attack == 2 and state.units.friend.base_max_hp == 5 and state.units.friend.damage_taken == 3, "modifiers: base stats and wounds stay separate")
+	_check(state.units.friend.attack == 3 and state.units.friend.max_hp == 7 and state.units.friend.hp == 4, "modifiers: max and current health increase equally")
+	_order(rules, "heal", [{"op": "heal", "target": "chosen_friendly", "amount": 9}])
+	state = _commit(rules, {"type": "order", "unit_id": "heal", "target_id": "friend"}, "modifiers: heal to modified maximum")
+	_check(state.units.friend.hp == 7 and state.units.friend.damage_taken == 0 and state.units.friend.modifiers.size() == 1, "healing: does not replace stat modifiers")
+	_order(rules, "temporary", [{"op": "modify_stats", "target": "chosen_friendly_unit", "attack": 2, "health": 2, "duration": "until_next_owner_turn_end"}])
+	_commit(rules, {"type": "order", "unit_id": "temporary", "target_id": "friend"}, "modifiers: temporary extension")
+	_commit(rules, {"type": "end_turn"}, "modifiers: current turn ends")
+	_commit(rules, {"type": "end_turn"}, "modifiers: next owner turn starts", "ai")
+	state = _commit(rules, {"type": "end_turn"}, "modifiers: next owner turn ends")
+	_check(state.units.friend.attack == 3 and state.units.friend.max_hp == 7 and state.units.friend.modifiers.size() == 1, "modifiers: expiry recalculates from unchanged base")
+	rules = _fixture()
+	_put(rules, "dependent", "player", "support", "infantry", 1, 1)
+	var provider: Dictionary = _unit_definition([{"op": "modify_stats", "target": "friendly_units", "attack": 0, "health": 2, "duration": "while_source_on_battlefield"}], "deploy")
+	provider.auras = [{"kind": "aftermath_twice"}]
+	_defined(rules, "provider", "player", "hand", provider)
+	rules._state.units.dependent.abilities = [{"trigger": "aftermath", "effects": [{"op": "heal", "target": "owner_hq", "amount": 1}]}]
+	rules._state.sides.player.hq_hp = 10
+	_commit(rules, {"type": "deploy", "unit_id": "provider"}, "source modifier: provider enters")
+	_order(rules, "wound", [{"op": "damage", "target": "chosen_friendly_unit", "amount": 2}])
+	_commit(rules, {"type": "order", "unit_id": "wound", "target_id": "dependent"}, "source modifier: dependent survives on extra health")
+	_order(rules, "remove", [{"op": "damage", "target": "chosen_friendly_unit", "amount": 3}])
+	var result: Dictionary = rules.execute({"type": "order", "unit_id": "remove", "target_id": "provider"})
+	_check(result.accepted and rules.snapshot().sides.player.support_ids.is_empty(), "source modifier: lost provider causes a second death cohort")
+	_check(rules.snapshot().sides.player.hq_hp == 11, "source modifier: later death does not use previously dead doubling aura")
+	_check(_events_of(result.events, "unit_destroyed").size() == 2, "source modifier: recursive stabilization removes each unit once")
+	var dependent_deaths: Array = _events_of(result.events, "unit_destroyed")
+	_check(dependent_deaths[0].batch_id != dependent_deaths[1].batch_id, "source modifier: derivative death is recorded as a separate cohort")
+	rules = _fixture()
+	_put(rules, "bomber", "player", "support", "bomber", 1, 8)
+	_put(rules, "fighter", "ai", "support", "fighter", 3, 8)
+	_put(rules, "covered", "ai", "support")
+	_order(rules, "pin", [{"op": "suppress", "target": "chosen_enemy_unit"}])
+	_commit(rules, {"type": "order", "unit_id": "pin", "target_id": "fighter"}, "suppression: applied")
+	_reject(rules, {"type": "attack", "unit_id": "bomber", "target_id": "covered"}, "suppression: fighter passive remains")
+	state = _commit(rules, {"type": "attack", "unit_id": "bomber", "target_id": "fighter"}, "suppression: defender still retaliates")
+	_check(state.units.bomber.hp == 5, "suppression: retaliation does not require readiness")
+	_commit(rules, {"type": "end_turn"}, "suppression: owner's next turn begins")
+	_reject(rules, {"type": "attack", "unit_id": "fighter", "target_id": "hq:player"}, "suppression: cannot attack on its next turn", "ai")
+	_reject(rules, {"type": "move", "unit_id": "fighter"}, "suppression: cannot move on its next turn", "ai")
+	state = _commit(rules, {"type": "end_turn"}, "suppression: expires at next owner turn end", "ai")
+	_check(not state.units.fighter.suppressed, "suppression: independent expiry survives ordinary ready refresh")
+	rules = _fixture()
+	_put(rules, "active", "player", "support", "infantry", 2, 7)
+	_defined(rules, "pin_after", "ai", "frontline", _unit_definition([{"op": "suppress", "target": "enemy_units"}]))
+	_commit(rules, {"type": "attack", "unit_id": "active", "target_id": "pin_after"}, "suppression: applied during target owner's turn")
+	state = _commit(rules, {"type": "end_turn"}, "suppression: same owner's current turn ends")
+	_check(state.units.active.suppressed, "suppression: current remainder is not the next complete turn")
+	_commit(rules, {"type": "end_turn"}, "suppression: returns to owner", "ai")
+	state = _commit(rules, {"type": "end_turn"}, "suppression: following owner turn ends")
+	_check(not state.units.active.suppressed, "suppression: correct expiry after being applied in own turn")
+
+
+func _test_aftermath_resolution() -> void:
+	var rules: Rules = _fixture()
+	rules._state.sides.player.hq_hp = 10
+	rules._state.sides.ai.hq_hp = 10
+	var heal: Array = [{"op": "heal", "target": "owner_hq", "amount": 1}]
+	_defined(rules, "victim", "player", "support", _unit_definition(heal), 2)
+	_defined(rules, "enemy_first", "ai", "support", _unit_definition(heal), 1)
+	for index in range(2):
+		var aura: Dictionary = _unit_definition()
+		aura.auras = [{"kind": "aftermath_twice"}]
+		_defined(rules, "aura-%d" % index, "player", "support", aura, 3 + index)
+	_order(rules, "wave", [{"op": "damage", "target": "all_units", "amount": 1}])
+	var result: Dictionary = rules.execute({"type": "order", "unit_id": "wave"})
+	_check(result.accepted, "aftermath: atomic all-unit damage accepted")
+	var deaths: Array = _events_of(result.events, "unit_destroyed")
+	var triggers: Array = _events_of(result.events, "ability_triggered").filter(func(e: Dictionary): return e.trigger == "aftermath")
+	_check(deaths.map(func(e: Dictionary): return e.unit_id) == ["enemy_first", "victim", "aura-0", "aura-1"], "deaths: global entry order across both owners")
+	_check(deaths.all(func(e: Dictionary): return e.batch_id == deaths[0].batch_id), "deaths: AOE is one damage and death batch")
+	_check(triggers.map(func(e: Dictionary): return e.source_id) == ["enemy_first", "victim", "victim"], "aftermath: same-death aura doubles and multiple auras cap at two")
+	_check(rules.snapshot().sides.player.hq_hp == 12 and rules.snapshot().sides.ai.hq_hp == 11, "aftermath: captured counts remain fixed after aura removal")
+	_check(result.events.find(deaths.back()) < result.events.find(triggers.front()), "deaths: whole cohort removed before any aftermath")
+	rules = _fixture()
+	var choose: Array = [{"op": "choose", "target": "chosen_enemy_unit"}]
+	_defined(rules, "left", "player", "support", _unit_definition(choose), 1)
+	_defined(rules, "right", "player", "support", _unit_definition(choose), 2)
+	rules._state.sides.player.hq_index = 1
+	_put(rules, "choice_target", "ai", "support")
+	_order(rules, "positions", [{"op": "damage", "target": "friendly_units", "amount": 1}])
+	result = rules.execute({"type": "order", "unit_id": "positions"})
+	_check(result.accepted and rules.snapshot().phase == "waiting_choice" and rules.snapshot().sides.player.hq_index == 0,
+		"death position: both support units leave before first aftermath pauses")
+	var left_source: Dictionary = rules._resolution.current.source
+	var right_source: Dictionary = rules._resolution.queue.front().source
+	_check(left_source.death_zone == "support" and left_source.death_index == 0 and left_source.death_unit_index == 0
+		and left_source.death_hq_index == 1, "death position: left snapshot retains original HQ slot")
+	_check(right_source.death_zone == "support" and right_source.death_index == 2 and right_source.death_unit_index == 1
+		and right_source.death_hq_index == 1, "death position: right snapshot includes HQ and survives same-batch removals")
+	rules = _fixture()
+	rules._state.sides.player.hq_hp = 10
+	rules._state.sides.ai.hq_hp = 10
+	_defined(rules, "A", "player", "support", _unit_definition([
+		{"op": "damage", "target": "enemy_units", "amount": 2}, {"op": "heal", "target": "owner_hq", "amount": 1}]), 1)
+	_defined(rules, "B", "player", "support", _unit_definition([{"op": "heal", "target": "owner_hq", "amount": 3}]), 2)
+	_defined(rules, "C", "ai", "support", _unit_definition([{"op": "heal", "target": "owner_hq", "amount": 2}], "aftermath", 2), 3)
+	_order(rules, "start", [{"op": "damage", "target": "friendly_units", "amount": 1}])
+	result = rules.execute({"type": "order", "unit_id": "start"})
+	triggers = _events_of(result.events, "ability_triggered").filter(func(e: Dictionary): return e.trigger == "aftermath")
+	_check(triggers.map(func(e: Dictionary): return e.source_id) == ["A", "B", "C"], "FIFO: A completes, then queued B, then newly killed C")
+	var heals: Array = _events_of(result.events, "healed")
+	_check(heals.map(func(e: Dictionary): return e.amount) == [1, 3, 2], "FIFO: A's second effect completes before B or C")
+	rules = _fixture()
+	rules._state.sides.player.hq_hp = 10
+	var aura: Dictionary = _unit_definition()
+	aura.auras = [{"kind": "aftermath_twice"}]
+	_defined(rules, "aura", "player", "support", aura, 1)
+	_defined(rules, "twice", "player", "support", _unit_definition([
+		{"op": "heal", "target": "owner_hq", "amount": 1}, {"op": "draw", "target": "owner", "amount": 1}]), 2)
+	for index in range(2): _put(rules, "draw-%d" % index, "player", "draw")
+	_order(rules, "kill", [{"op": "damage", "target": "chosen_friendly_unit", "amount": 1}])
+	result = rules.execute({"type": "order", "unit_id": "kill", "target_id": "twice"})
+	var steps: Array = result.events.filter(func(e: Dictionary): return e.type in ["healed", "card_drawn"])
+	_check(steps.map(func(e: Dictionary): return e.type) == ["healed", "card_drawn", "healed", "card_drawn"], "doubling: two complete abilities, not each effect repeated")
+	rules = _fixture()
+	_order(rules, "mutual", [{"op": "damage", "target": "all_hqs", "amount": 20}, {"op": "heal", "target": "owner_hq", "amount": 99}])
+	result = rules.execute({"type": "order", "unit_id": "mutual"})
+	var final: Dictionary = rules.snapshot()
+	_check(final.phase == "finished" and final.winner == "draw" and final.sides.player.hq_hp == 0 and final.sides.ai.hq_hp == 0, "terminal: both HQs reach zero in one batch")
+	_check(_events_of(result.events, "healed").is_empty() and _events_of(result.events, "battle_finished").size() == 1, "terminal: no later heal and one result event")
+	rules = _fixture()
+	rules._state.sides.player.hq_hp = 10
+	_defined(rules, "lethal_A", "player", "support", _unit_definition([
+		{"op": "damage", "target": "enemy_hq", "amount": 20}, {"op": "heal", "target": "owner_hq", "amount": 2}]), 1)
+	_defined(rules, "cancelled_B", "player", "support", _unit_definition(heal), 2)
+	_order(rules, "terminal_chain", [{"op": "damage", "target": "friendly_units", "amount": 1}])
+	result = rules.execute({"type": "order", "unit_id": "terminal_chain"})
+	_check(rules.snapshot().winner == "player" and rules.snapshot().sides.player.hq_hp == 10, "terminal: cancels current remainder and later abilities")
+	_check(_events_of(result.events, "ability_triggered").size() == 2, "terminal: queued B never starts")
+
+
+func _test_choice_and_conditions() -> void:
+	var rules: Rules = _fixture()
+	_put(rules, "friend", "player", "support", "infantry", 1, 5)
+	rules._state.units.friend.hp = 2
+	_put(rules, "enemy", "ai", "frontline", "infantry", 1, 7)
+	_put(rules, "drawn", "player", "draw")
+	var effects: Array = [
+		{"op": "draw", "target": "owner", "amount": 1},
+		{"op": "choose", "target": "chosen_enemy_unit"},
+		{"op": "damage", "target": "chosen_enemy_unit", "amount": 2},
+		{"op": "heal", "target": "friendly_units", "amount": 1},
+	]
+	_order(rules, "choice", effects)
+	var definition: Dictionary = {"card_type": "order", "name": "测试选择", "deploy_cost": 1, "abilities": [{"trigger": "play", "effects": effects}]}
+	_check(not Schema.validate_definition(definition).is_empty() and Schema.validate_definition(definition, true).is_empty(), "choice: unsupported product ability is limited to fixture mode")
+	var config: Resource = preload("res://resources/rules/approved_rules.tres").duplicate(true)
+	config.first_hand_count = 0
+	config.second_hand_count = 0
+	var injected: Rules = Rules.new()
+	_check(injected.setup(TEST_SEED, config, {"choice": definition}, {"player": ["choice"], "ai": ["choice"]}, true).accepted, "choice: fixture definition passes the real setup entry")
+	var result: Dictionary = rules.execute({"type": "order", "unit_id": "choice"})
+	var paused: Dictionary = rules.snapshot()
+	_check(result.accepted and paused.phase == "waiting_choice" and paused.sides.player.command_points == 11 and paused.sides.player.hand_ids == ["drawn"], "choice: accepted action suspends after paid draw")
+	var choice_id: String = str(paused.pending_choice.choice_id)
+	_check(rules.legal_actions("ai").is_empty() and rules.legal_actions("player").size() == 1, "choice: only the choosing owner receives actions")
+	_reject(rules, {"type": "end_turn"}, "choice: cannot end turn while resolving")
+	_reject(rules, {"type": "choose", "choice_id": choice_id, "target_id": "enemy"}, "choice: wrong owner", "ai")
+	_reject(rules, {"type": "choose", "choice_id": "old", "target_id": "enemy"}, "choice: stale identity")
+	_reject(rules, {"type": "choose", "choice_id": choice_id, "target_id": "friend"}, "choice: invalid selection")
+	# A fixture adds a later unit to expose whether automatic targets were locked at start.
+	_put(rules, "later_friend", "player", "support", "infantry", 1, 5)
+	rules._state.units.later_friend.hp = 2
+	result = rules.execute({"type": "choose", "choice_id": choice_id, "target_id": "enemy"})
+	var resumed: Dictionary = rules.snapshot()
+	_check(result.accepted and resumed.phase == "active" and resumed.pending_choice.is_empty(), "choice: valid answer resumes saved cursor")
+	_check(resumed.units.enemy.hp == 5 and resumed.units.friend.hp == 3 and resumed.units.later_friend.hp == 2, "choice: chosen target resolves and automatic targets stay locked for whole ability")
+	_check(resumed.sides.player.command_points == 11 and _events_of(result.events, "command_points_spent").is_empty() and _events_of(result.events, "card_drawn").is_empty() and _events_of(result.events, "ability_triggered").is_empty(), "choice: resume repeats no cost, earlier effect or trigger")
+	_reject(rules, {"type": "choose", "choice_id": choice_id, "target_id": "enemy"}, "choice: consumed cursor cannot resume twice")
+	rules = _fixture()
+	_put(rules, "attacker", "player", "support", "infantry", 2, 7)
+	var conditional: Dictionary = _unit_definition([{"op": "heal", "target": "owner_hq", "amount": 1}])
+	conditional.abilities[0].condition = {"kind": "source_owner_active"}
+	_defined(rules, "conditional", "ai", "frontline", conditional)
+	rules._state.sides.ai.hq_hp = 10
+	result = rules.execute({"type": "attack", "unit_id": "attacker", "target_id": "conditional"})
+	_check(result.accepted and rules.snapshot().sides.ai.hq_hp == 10 and _events_of(result.events, "ability_triggered").is_empty(), "condition: inactive source owner prevents trigger capture")
+	_check(rules.ability_condition_matches({"condition": {"kind": "owner_hq_damaged"}}, {"owner": "ai"}), "condition: public HQ damage predicate")
+	_check(not rules.ability_condition_matches({"condition": {"kind": "owner_hq_damaged"}}, {"owner": "player"}), "condition: full HQ predicate is false")
+	rules = _fixture()
+	_put(rules, "active_source", "player", "support", "infantry", 2, 7)
+	_defined(rules, "enemy_choice", "ai", "frontline", _unit_definition([
+		{"op": "choose", "target": "chosen_enemy_unit"}, {"op": "damage", "target": "chosen_enemy_unit", "amount": 1}]))
+	result = rules.execute({"type": "attack", "unit_id": "active_source", "target_id": "enemy_choice"})
+	_check(result.accepted and rules.snapshot().phase == "waiting_choice" and rules.snapshot().pending_choice.owner == "ai", "choice: inactive owner can choose during opponent's turn")
+	var answer: Dictionary = Policy.new().choose_action(rules.legal_actions("ai"), rules.side_view("ai"))
+	result = rules.execute(answer, "ai")
+	_check(result.accepted and rules.snapshot().phase == "active" and rules.snapshot().active_side == "player" and rules.snapshot().units.active_source.hp == 5, "choice: inactive owner resumes original actor after one counter and one effect")
+
+
+func _test_effect_ai_and_privacy() -> void:
+	for card_id in ["order_damage", "order_row_damage", "order_draw", "order_heal", "order_buff", "order_suppress"]:
+		var rules: Rules = _fixture("ai")
+		_put(rules, "friend", "ai", "support", "infantry", 1, 7)
+		rules._state.units.friend.hp = 2
+		rules._state.units.friend.deployed_this_turn = true
+		_put(rules, "enemy", "player", "frontline", "infantry", 3, 2)
+		for index in range(2): _put(rules, "draw-%d" % index, "ai", "draw")
+		_defined(rules, "order", "ai", "hand", Catalog.card(card_id))
+		var action: Dictionary = _choose(rules)
+		_check(action.get("type") == "order" and action.get("unit_id") == "order", "AI: useful " + card_id)
+		_commit(rules, action, "AI: executes " + card_id, "ai")
+	var rules: Rules = _fixture("ai")
+	rules._state.sides.ai.hq_hp = 1
+	_put(rules, "last_card", "ai", "draw")
+	_defined(rules, "dangerous_draw", "ai", "hand", Catalog.card("order_draw"))
+	_check(_choose(rules).get("type") == "end_turn", "AI: avoids lethal fatigue from multi-draw with one card left")
+	rules = _fixture("ai")
+	_put(rules, "zero_attack", "ai", "support", "artillery", 0, 5)
+	_check(_choose(rules).get("type") != "attack", "AI: avoids paying to deal zero damage to HQ")
+	rules = _fixture()
+	for index in range(8): _put(rules, "hidden-%d" % index, "ai", "hand")
+	_order(rules, "public_order", [{"op": "heal", "target": "owner_hq", "amount": 1}], "ai")
+	_defined(rules, "secret_overflow", "ai", "draw", _unit_definition([{"op": "damage", "target": "enemy_hq", "amount": 10}]))
+	var result: Dictionary = rules.execute({"type": "end_turn"})
+	var view: Dictionary = rules.side_view("player")
+	_check(result.accepted and view.sides.ai.discard_count == 1 and view.sides.ai.discard_ids.is_empty() and not view.units.has("secret_overflow"), "privacy: enemy overflow keeps only anonymous discard count")
+	_check(view.sides.player.hq_hp == 20 and _events_of(result.events, "ability_triggered").is_empty(), "overflow: discard is not battlefield death")
+	result = rules.execute({"type": "order", "unit_id": "public_order"}, "ai")
+	view = rules.side_view("player")
+	_check(result.accepted and view.units.has("public_order") and view.sides.ai.discard_ids == ["public_order"], "privacy: played enemy order remains public in discard")
+	_check(not view.units.has("secret_overflow"), "privacy: later actions never reveal an overflowed card")

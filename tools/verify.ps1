@@ -72,6 +72,11 @@ $startedAt = [datetime]::UtcNow
 
 function Invoke-GodotProcess {
     param([string]$Name, [string[]]$Arguments, [int]$TimeoutSeconds, [string]$Executable = $GodotPath)
+    # Select the isolated library before any scene or store can initialize it.
+    if ($Arguments -contains '--script' -and $Arguments -notcontains '--card-library-root') {
+        $libraryName = if ($Name -like 'workshop-persistence-*') { 'persistent-library' } else { "$Name-library" }
+        $Arguments += @('--card-library-root', (Join-Path $runDirectory $libraryName))
+    }
     $stdoutPath = Join-Path $runDirectory "$Name-stdout.log"
     $stderrPath = Join-Path $runDirectory "$Name-stderr.log"
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
@@ -269,6 +274,13 @@ try {
     $verification.checks.import = $importCheck
     if ($importCheck.status -ne 'passed') { throw 'Godot import failed.' }
 
+    $libraryLog = Join-Path $runDirectory 'library-engine.log'
+    $libraryCheck = Invoke-GodotProcess -Name 'library' -Arguments @('--headless', '--path', $ProjectRoot, '--script', 'res://tests/library_smoke.gd', '--log-file', $libraryLog, '--', '--run-id', $runId, '--output-dir', $runDirectory) -TimeoutSeconds $RulesTimeoutSeconds
+    Test-EngineLog -Step $libraryCheck -LogPath $libraryLog
+    Test-ResultFile -Name 'library' -Step $libraryCheck
+    $verification.checks.library = $libraryCheck
+    if ($libraryCheck.status -ne 'passed') { throw 'Shared library verification failed.' }
+
     $geometryLog = Join-Path $runDirectory 'geometry-engine.log'
     $geometryOptions = @()
     if ($Art) { $geometryOptions += '--art' }
@@ -339,7 +351,7 @@ try {
     $verification.failure = $_.Exception.Message
     Write-Warning $_.Exception.Message
 } finally {
-    foreach ($missingCheck in @('import', 'geometry', 'rules', 'navigation', 'ui', 'presentation', 'workshop_ui')) {
+    foreach ($missingCheck in @('import', 'library', 'geometry', 'rules', 'navigation', 'ui', 'presentation', 'workshop_ui')) {
         if (-not $verification.checks.Contains($missingCheck)) {
             $verification.checks[$missingCheck] = [ordered]@{ status = 'pending'; reason = 'Not reached because an earlier check failed.' }
         }

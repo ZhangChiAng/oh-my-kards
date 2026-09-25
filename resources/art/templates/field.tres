@@ -21,7 +21,8 @@ slots = {
 "health": Rect2(63, 96, 18, 19),
 "type_icon_box": Rect2(36, 96, 20, 19),
 "type_icon": Rect2(37, 97, 18, 17),
-"type_name": Rect2(9, 50, 72, 20)
+"type_name": Rect2(9, 50, 72, 20),
+"keywords": Rect2(7, 76, 76, 20)
 }
 font_sizes = {
 "action_cost": 14,
@@ -33,5 +34,8 @@ font_sizes = {
 "health": 16,
 "health_min": 13,
 "type_name": 10,
-"type_name_min": 8
+"type_name_min": 8,
+"keywords": 6,
+"keywords_min": 5,
+"rule_lines": 3
 }

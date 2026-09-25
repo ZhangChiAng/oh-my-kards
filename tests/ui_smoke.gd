@@ -2,6 +2,7 @@ extends SceneTree
 ## Fixtures only arrange state; all game commands and buttons use real Input events.
 
 const Catalog = preload("res://scripts/card_catalog.gd")
+const CardSchema = preload("res://scripts/card_schema.gd")
 var include_art: bool = OS.get_cmdline_user_args().has("--art")
 var include_sizes: bool = OS.get_cmdline_user_args().has("--sizes")
 const SCENE_PATH: String = "res://scenes/battle.tscn"
@@ -9,7 +10,7 @@ const TEST_SEED: int = 20260917
 const AWAY := Vector2(8, 8)
 const MAIN_WINDOW := Vector2i(1920, 1080)
 const WINDOW_MATRIX: Array[Vector2i] = [Vector2i(1024, 640), Vector2i(3440, 1440)]
-const CARDS: Array[String] = ["pathfinder", "dust_rover", "field_mortar", "interceptor", "strike_wing", "colony_guard", "bastion", "sky_guard", "eclipse"]
+const CARDS: Array[String] = ["std_infantry", "raid_tank", "std_artillery", "std_fighter", "std_bomber", "guard_infantry", "armor_tank", "raid_fighter", "std_bomber"]
 var run_id: String = ""
 var output_dir: String = ""
 var assertions: int = 0
@@ -25,9 +26,22 @@ var _pointer_focus_serial: int = 0
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
+	var library_index: int = args.find("--card-library-root")
+	if args.count("--card-library-root") != 1 or library_index < 0 or library_index + 1 >= args.size() or str(args[library_index + 1]).is_empty():
+		push_error("UI tests require an isolated --card-library-root before loading any scene.")
+		quit(2)
+		return
 	for index in range(args.size() - 1):
 		if args[index] == "--run-id": run_id = args[index + 1]
 		elif args[index] == "--output-dir": output_dir = args[index + 1]
+	var artifacts_path: String = ProjectSettings.globalize_path("res://artifacts").simplify_path().replace("\\", "/").trim_suffix("/")
+	var output_path: String = ProjectSettings.globalize_path(output_dir).simplify_path().replace("\\", "/").trim_suffix("/")
+	var library_path: String = ProjectSettings.globalize_path(str(args[library_index + 1])).simplify_path().replace("\\", "/").trim_suffix("/")
+	if not output_path.is_absolute_path() or not output_path.to_lower().begins_with(artifacts_path.to_lower() + "/") or not library_path.is_absolute_path() or not library_path.to_lower().begins_with(output_path.to_lower() + "/"):
+		push_error("UI tests require --output-dir beneath res://artifacts and --card-library-root beneath that output directory.")
+		quit(2)
+		return
+	output_dir = output_path
 	call_deferred("_run")
 
 func _run() -> void:
@@ -62,10 +76,10 @@ func _run() -> void:
 	_check(_no_development_entries() and not _state().has("workshop"), "Battle excludes development entries and workshop state")
 	_resource_checks()
 	if include_art: _export_art_template()
-	for group in ["opening", "mulligan_cards", "fan", "positions", "cancellation_and_scale", "busy_and_restart", "settings_modal", "hover_delay_and_insertion", "history"]:
+	for group in ["opening", "mulligan_cards", "fan", "positions", "cancellation_and_scale", "busy_and_restart", "settings_modal", "hover_delay_and_insertion", "history", "abilities_and_orders"]:
 		await _timed_group(group)
 	if include_art:
-		for group in ["theme_independence", "font_geometry", "configuration", "component_bounds", "unit_icons"]:
+		for group in ["theme_independence", "font_geometry", "configuration", "component_bounds", "unit_icons", "ability_text_bounds"]:
 			await _timed_group(group)
 	if include_sizes: await _timed_group("resolution_matrix")
 	_finish()
@@ -77,7 +91,7 @@ func _timed_group(group: String) -> void:
 
 func _opening() -> void:
 	var before: Dictionary = _domain()
-	if not _check(before.phase == "mulligan" and before.units.size() == 38 and _state().run_id == run_id, "Natural nineteen-card opening and current run"):
+	if not _check(before.phase == "mulligan" and before.units.size() == 80 and _state().run_id == run_id, "Natural forty-card opening and current run"):
 		return
 	var id: String = str(before.sides.player.hand_ids[0])
 	if not await _click("hand:" + id): return
@@ -194,11 +208,11 @@ func _positions() -> void:
 	var fixture: Dictionary = _fixture()
 	_put(fixture, "left", "player", "hand")
 	_put(fixture, "right", "player", "hand")
-	_put(fixture, "mover", "player", "support", "dust_rover")
-	_put(fixture, "front-left", "player", "frontline", "colony_guard")
-	_put(fixture, "front-right", "player", "frontline", "interceptor")
-	_put(fixture, "enemy-left", "ai", "support", "bastion")
-	_put(fixture, "enemy-right", "ai", "support", "strike_wing")
+	_put(fixture, "mover", "player", "support", "raid_tank")
+	_put(fixture, "front-left", "player", "frontline", "guard_infantry")
+	_put(fixture, "front-right", "player", "frontline", "std_fighter")
+	_put(fixture, "enemy-left", "ai", "support", "armor_tank")
+	_put(fixture, "enemy-right", "ai", "support", "std_bomber")
 	fixture.sides.ai.hq_index = 1
 	if not await _load_fixture(fixture): return
 	if not await _drag("hand:left", "support:player:0"): return
@@ -287,19 +301,19 @@ func _busy_and_restart() -> void:
 
 func _history() -> void:
 	var fixture: Dictionary = _fixture()
-	_put(fixture, "gun", "player", "support", "rail_battery")
+	_put(fixture, "gun", "player", "support", "std_artillery")
 	_put(fixture, "victim", "ai", "frontline")
 	for side in ["player", "ai"]:
 		for index in range(1):
 			var id: String = side + "-secret-%d" % index
-			_put(fixture, id, side, "draw", "eclipse")
+			_put(fixture, id, side, "draw", "std_bomber")
 			fixture.units[id].name = "隐秘牌名" + id
 			fixture.units[id].deploy_cost = 20
 	if not await _load_fixture(fixture): return
 	var count: int = _state().history.entries.size()
 	if not await _drag("unit:gun", "unit:victim"): return
 	var entries: Array = _state().history.entries
-	if not _check(entries.size() == count + 1 and entries.back().type == "attack" and str(entries.back().text).contains("阵亡") and str(entries.back().text).contains("边境侦察队"), "Public attack and death share one history item"): return
+	if not _check(entries.size() == count + 1 and entries.back().type == "attack" and str(entries.back().text).contains("阵亡") and str(entries.back().text).contains("标准步兵"), "Public attack and death share one history item"): return
 	battle.ai_step_delay = 0.01
 	if not await _click("end_turn"): return
 	if not await _player_idle(): return
@@ -307,6 +321,84 @@ func _history() -> void:
 	_check(not _state().history.open and not _state().ui_controls.has("history_toggle") and not _state().ui_controls.has("history_scroll"), "Public history remains observable without a separate history panel")
 	_record("history-data-only")
 	battle.ai_step_delay = 1.0
+
+
+func _abilities_and_orders() -> void:
+	var fixture: Dictionary = _fixture()
+	_put(fixture, "deployer", "player", "hand", "deploy_damage_artillery")
+	_put(fixture, "target", "ai", "support", "std_bomber")
+	if not await _load_fixture(fixture): return
+	var unchanged: Dictionary = _domain()
+	if not await _begin_drag("hand:deployer", "support:player:0"): return
+	_button(_point("support:player:0"), false)
+	await _frames(2)
+	_check(_state().interaction.state == "choosing_deploy" and _domain() == unchanged, "Targeted deployment reserves its position without paying or entering play")
+	await _capture("deployment-target.png")
+	_key(KEY_ESCAPE)
+	if not await _idle(): return
+	_check(_domain() == unchanged, "Cancelling the second deployment step leaves the entire domain unchanged")
+	if not await _begin_drag("hand:deployer", "support:player:0"): return
+	_button(_point("support:player:0"), false)
+	await _frames(2)
+	_check(_state().ui_controls["unit:target"].drop_enabled, "Deployment effect exposes its legal target")
+	if not await _click("unit:target"): return
+	_check(_domain().sides.player.command_points == 8 and _domain().units.target.hp == 4 and _domain().sides.player.support_ids.has("deployer"), "Targeted deployment commits cost, position and effect once")
+	fixture = _fixture()
+	_put(fixture, "no-target", "player", "hand", "deploy_damage_artillery")
+	if not await _load_fixture(fixture): return
+	if not await _drag("hand:no-target", "support:player:1"): return
+	_check(_domain().sides.player.support_ids.has("no-target") and _domain().sides.player.command_points == 8, "Targeted deployment with no legal enemy still enters play")
+	fixture = _fixture()
+	for index in range(4): _put(fixture, "full-%d" % index, "player", "support")
+	_put(fixture, "supply", "player", "hand", "order_draw")
+	_put(fixture, "draw-one", "player", "draw")
+	_put(fixture, "draw-two", "player", "draw")
+	if not await _load_fixture(fixture): return
+	var order: Control = battle._view._cards["supply"]
+	await _draw_frame("order ability text")
+	var order_text: Dictionary = order.geometry_snapshot().text
+	_check(order_text.has("rule_text") and order_text.rule_text.drawn and not order_text.has("attack") and not order_text.has("health") and not order_text.has("action_cost"), "Order card displays its effect and hides unit statistics")
+	if not await _begin_drag("hand:supply", "cast:player"): return
+	_check(not battle._view._overlay.regions.is_empty(), "Untargeted order has an explicit visible cast region")
+	_button(_point("cast:player"), false)
+	if not await _idle(): return
+	_check(_domain().sides.player.support_ids.size() == 4 and _domain().sides.player.hand_ids.size() == 2 and _domain().sides.player.discard_ids.has("supply"), "Full support row still permits an untargeted draw order")
+	fixture = _fixture()
+	_put(fixture, "buff", "player", "hand", "order_buff")
+	_put(fixture, "heal", "player", "hand", "order_heal")
+	_put(fixture, "suppress", "player", "hand", "order_suppress")
+	_put(fixture, "bombard", "player", "hand", "order_row_damage")
+	_put(fixture, "friend", "player", "support")
+	_put(fixture, "enemy-one", "ai", "support", "std_bomber")
+	_put(fixture, "enemy-two", "ai", "support", "std_bomber")
+	fixture.sides.player.hq_hp = 15
+	if not await _load_fixture(fixture): return
+	if not await _drag("hand:buff", "unit:friend"): return
+	_check(_domain().units.friend.attack == 3 and _domain().units.friend.hp == 4, "Friendly unit targeting applies the permanent buff")
+	if not await _drag("hand:heal", "hq:player"): return
+	_check(_domain().sides.player.hq_hp == 18, "Healing order accepts the friendly headquarters")
+	if not await _drag("hand:suppress", "unit:enemy-one"): return
+	_check(battle._view._cards["enemy-one"].display_data.keyword_text.contains("压制"), "Suppression appears on the field card")
+	if not await _drag("hand:bombard", "row:ai:support"): return
+	_check(_domain().units["enemy-one"].hp == 5 and _domain().units["enemy-two"].hp == 5, "Row target applies small area damage to both enemies")
+	_motion(_point("unit:enemy-one"))
+	if not await _wait_hover_detail("unit:enemy-one"): return
+	_check(battle._view.detail_snapshot().text.contains("压制"), "Hover explains the current suppression state")
+	await _capture("orders-and-status.png")
+	fixture = _fixture()
+	_put(fixture, "choice-order", "player", "hand", "order_draw")
+	_put(fixture, "choice-target", "ai", "support", "std_bomber")
+	fixture.units["choice-order"].abilities = [{"trigger": "play", "effects": [{"op": "choose", "target": "chosen_enemy_unit"}, {"op": "damage", "target": "chosen_enemy_unit", "amount": 1}]}]
+	if not await _load_fixture(fixture): return
+	if not await _begin_drag("hand:choice-order", "cast:player"): return
+	_button(_point("cast:player"), false)
+	var deadline: int = Time.get_ticks_msec() + 4000
+	while _state().interaction.state != "choosing_choice" and Time.get_ticks_msec() < deadline: await process_frame
+	_check(_domain().phase == "waiting_choice" and _state().interaction.state == "choosing_choice" and _domain().sides.player.command_points == 10, "A deferred choice pauses after paying for the order")
+	_check(_state().ui_controls["unit:choice-target"].drop_enabled and not _state().ui_controls.end_turn.enabled, "Pending choice exposes only legal effect targets and blocks end turn")
+	if not await _click("unit:choice-target"): return
+	_check(_domain().phase == "active" and _domain().units["choice-target"].hp == 5 and _domain().sides.player.command_points == 10, "Choosing a target resumes the pending effect without charging twice")
+	_record("abilities-and-orders")
 
 func _settings_modal() -> void:
 	var fixture: Dictionary = _fixture()
@@ -414,7 +506,7 @@ func _theme_independence() -> void:
 	_record("shared-geometry-and-motion")
 
 func _unit_icons() -> void:
-	# Render actual shared cards: distinct visible marks, no former text, no layout changes.
+	# Render actual shared cards: distinct visible marks, current abilities, stable layout.
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(600, 300)
 	viewport.disable_3d = true
@@ -434,7 +526,8 @@ func _unit_icons() -> void:
 			data.hp = data.max_hp
 			# Deliberately supply old display copy to catch accidental rendering.
 			data.type_name = "不应出现在卡面"
-			data.rule_text = "底部应留白"
+			data.rule_text = "旧字段不应覆盖能力正文"
+			data.ability_text = CardSchema.ability_text(data)
 			card.configure(data, mode, material, geometry.template(mode))
 			cards.append(card)
 	for profile: Resource in [material, debug]:
@@ -446,7 +539,9 @@ func _unit_icons() -> void:
 		var hashes: Dictionary = {"full": [], "field": []}
 		for card in cards:
 			var text: Dictionary = card.geometry_snapshot().text
-			_check(not text.has("type_name") and not text.has("rule_text"), "Card omits old type/rule text: " + card.mode)
+			_check(not text.has("type_name"), "Card omits legacy type-name text: " + card.mode)
+			if card.mode == "full": _text_bounds(card, "full", {"rule_text": CardSchema.ability_text(card.display_data)})
+			else: _check(not text.has("rule_text"), "Field card keeps ability prose in its hover detail")
 			var slot: Rect2 = geometry.template(card.mode).slots.type_icon
 			var region := Rect2i(Vector2i(card.position + slot.position), Vector2i(slot.size))
 			var pixels: Image = image.get_region(region)
@@ -462,6 +557,65 @@ func _unit_icons() -> void:
 			_check(not hashes[card.mode].has(digest), "Five unit marks differ: " + card.mode)
 			hashes[card.mode].append(digest)
 	_check(geometry.spec() == before, "Unit icon rendering preserves every template and reserved slot")
+	viewport.queue_free()
+
+
+func _ability_text_bounds() -> void:
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(1296, 1440)
+	viewport.disable_3d = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	root.add_child(viewport)
+	var background := ColorRect.new()
+	background.color = battle._view.profile.visual_theme.color("background")
+	background.size = Vector2(viewport.size)
+	viewport.add_child(background)
+	var template: Resource = battle._view.geometry.template("full")
+	var cards: Array = []
+	var index: int = 0
+	for card_id in Catalog.CARDS:
+		var card: Control = preload("res://scripts/art/art_card.gd").new()
+		viewport.add_child(card)
+		var data: Dictionary = Catalog.card(str(card_id))
+		data.hp = data.get("max_hp", 0)
+		data.command_unit = "K"
+		data.ability_text = CardSchema.ability_text(data)
+		data.type_name = "旧兵种文字不应绘制"
+		data.rule_text = "旧正文不能覆盖能力定义"
+		card.configure(data, "full", battle._view.profile, template)
+		card.position = Vector2(16 + (index % 5) * 256, 16 + (index / 5) * 354)
+		card.size = template.size * 2.0
+		cards.append(card)
+		index += 1
+	var material: Resource = battle._view.profile
+	var debug: Resource = preload("res://scripts/art/display_profile.gd").geometry_only()
+	for profile: Resource in [material, debug]:
+		for card in cards:
+			card.configure(card.display_data, "full", profile, template)
+			card.size = template.size * 2.0
+		if not await _draw_frame("twenty card ability bodies " + profile.profile_id):
+			viewport.queue_free()
+			return
+		var evidence: Array = []
+		for card in cards:
+			var body: String = CardSchema.ability_text(card.display_data)
+			_text_bounds(card, "full", {"name": card.display_data.name, "rule_text": body})
+			var measured: Dictionary = card.geometry_snapshot()
+			_check(measured.text.rule_text.drawn == not body.is_empty() and not measured.text.has("type_name"), "Definition body visibility matches the actual full card: " + str(card.display_data.card_id))
+			if card.display_data.card_type == "order":
+				_check(not measured.text.has("action_cost") and not measured.text.has("attack") and not measured.text.has("health"), "Order contact-sheet card omits unit values: " + str(card.display_data.card_id))
+			evidence.append({"card_id": card.display_data.card_id, "ability_text": body, "geometry": _json_geometry(measured)})
+		if profile == material:
+			var filename: String = "card-ability-contact-sheet.png"
+			var frame: Image = viewport.get_texture().get_image()
+			if _check(frame != null and not frame.is_empty() and frame.get_size() == viewport.size and frame.save_png(output_dir.path_join(filename)) == OK, "Twenty-card ability contact sheet saves its actual rendered pixels"):
+				screenshots.append(filename)
+				var snapshot: Dictionary = _state()
+				var sidecar := FileAccess.open(output_dir.path_join(filename + ".json"), FileAccess.WRITE)
+				if _check(sidecar != null, "Twenty-card ability contact sheet records its rendering configuration"):
+					sidecar.store_string(JSON.stringify({"run_id": run_id, "scene_path": SCENE_PATH, "presentation": snapshot.presentation, "viewport": {"width": viewport.size.x, "height": viewport.size.y, "card_scale": 2.0}, "state": snapshot, "cards": evidence}, "\t"))
+					sidecar.close()
+	_check(cards.size() == 20, "Ability contact sheet covers every first-release card")
 	viewport.queue_free()
 
 
@@ -541,7 +695,7 @@ func _configuration() -> void:
 
 func _component_bounds() -> void:
 	# One representative full/field/HQ fixture retains double-digit text bounds.
-	for card_id in ["strike_wing"]:
+	for card_id in ["std_bomber"]:
 		var fixture: Dictionary = _fixture()
 		_put(fixture, "bounds-hand", "player", "hand", card_id)
 		_put(fixture, "bounds-field", "player", "support", card_id)
@@ -724,15 +878,17 @@ func _resolution_matrix() -> void:
 	await _frames(3)
 
 func _resource_checks() -> void:
-	_check(Catalog.CARDS.size() == 11, "Catalogue retains ten deck definitions and reserve militia")
+	_check(Catalog.CARDS.size() == 20, "Catalogue contains the twenty replacement definitions")
 	var profile: Resource = battle._view.profile
-	if not _check(profile != null and profile.visual_theme != null and profile.artworks == null and profile.visual_theme.background_texture != null, "Default tabletop loads its background without a card artwork library"): return
-	_check(profile.visual_theme.card_texture != null and profile.visual_theme.card_texture.resource_path == "res://assets/art/materials/graphite-paper.png", "Default cards load the selected graphite paper")
+	if not _check(profile != null and profile.visual_theme != null and profile.visual_theme.background_texture != null, "Default tabletop loads its background"): return
+	for unit in _domain().units.values(): _check(str(unit.get("artwork_source", "")).is_empty(), "New cards have empty illustration sources")
+	var expected_paper: Texture2D = load("res://assets/art/materials/graphite-paper.png")
+	_check(profile.visual_theme.card_texture != null and profile.visual_theme.card_texture.get_image().get_data() == expected_paper.get_image().get_data(), "Default cards retain the selected graphite paper in the session profile")
 	_check(battle._view._board.geometry_snapshot().diagnostics.is_empty(), "Tabletop board has no missing-resource errors")
 	if not include_art: return
 	var texture := load("res://assets/art/illustrations/infantry-street-assault-v2.png") as Texture2D
 	_check(texture != null and texture.get_width() == 1346 and texture.get_height() == 1169, "Retained street assault illustration keeps its original dimensions")
-	_check(profile.artworks == null, "Retained illustrations are not mapped into battle")
+	_check(profile.artworks == null or profile.artworks.entries().is_empty(), "Empty illustrations produce no mapped battle artwork")
 	_record("retained-art-resources")
 
 func _export_art_template() -> void:
@@ -763,12 +919,12 @@ func _json_geometry(value: Variant) -> Variant:
 func _fixture() -> Dictionary:
 	var state: Dictionary = {"seed": TEST_SEED, "turn": 1, "first_side": "player", "active_side": "player", "phase": "active", "winner": "", "frontline_ids": [], "units": {}, "sides": {}}
 	for side in ["player", "ai"]:
-		state.sides[side] = {"hq_hp": 20, "hq_index": 0, "fatigue": 0, "command_points": 12, "max_command_points": 12, "turns_started": 1, "mulligan_done": true, "hand_ids": [], "draw_ids": [], "discard_ids": [], "support_ids": []}
+		state.sides[side] = {"hq_hp": 20, "hq_max_hp": 20, "hq_index": 0, "fatigue": 0, "command_points": 12, "max_command_points": 12, "turns_started": 1, "mulligan_done": true, "hand_ids": [], "draw_ids": [], "discard_ids": [], "support_ids": []}
 	return state
 
-func _put(state: Dictionary, id: String, owner: String, zone: String, card: String = "pathfinder") -> void:
+func _put(state: Dictionary, id: String, owner: String, zone: String, card: String = "std_infantry") -> void:
 	var unit: Dictionary = Catalog.card(card)
-	unit.merge({"instance_id": id, "owner": owner, "hp": unit.max_hp, "deployed_this_turn": false, "moved_this_turn": false, "attacked_this_turn": false})
+	unit.merge({"instance_id": id, "owner": owner, "zone": zone, "hp": unit.get("max_hp", 0), "suppressed": false, "statuses": {}, "deployed_this_turn": false, "moved_this_turn": false, "attacked_this_turn": false})
 	state.units[id] = unit
 	if zone == "frontline": state.frontline_ids.append(id)
 	else: state.sides[owner][zone + "_ids"].append(id)
@@ -995,11 +1151,11 @@ func _finish() -> void:
 
 func _hover_delay_and_insertion() -> void:
 	var fixture: Dictionary = _fixture()
-	_put(fixture, "preview-hand", "player", "hand", "pathfinder")
-	_put(fixture, "preview-hand-2", "player", "hand", "pathfinder")
-	_put(fixture, "preview-mover", "player", "support", "pathfinder")
-	_put(fixture, "preview-neighbor", "player", "frontline", "pathfinder")
-	_put(fixture, "preview-neighbor-2", "player", "frontline", "pathfinder")
+	_put(fixture, "preview-hand", "player", "hand", "std_infantry")
+	_put(fixture, "preview-hand-2", "player", "hand", "std_infantry")
+	_put(fixture, "preview-mover", "player", "support", "std_infantry")
+	_put(fixture, "preview-neighbor", "player", "frontline", "std_infantry")
+	_put(fixture, "preview-neighbor-2", "player", "frontline", "std_infantry")
 	if not await _load_fixture(fixture): return
 	var hand_card: Control = battle._view._cards["preview-hand"]
 	var base_pose: Dictionary = hand_card.pose().duplicate(true)

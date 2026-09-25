@@ -6,6 +6,7 @@ const Widgets = preload("res://scripts/art/art_widgets.gd")
 const MAIN_WINDOW := Vector2i(1920, 1080)
 var run_id: String = ""
 var output_dir: String = ""
+var library_root: String = ""
 var assertions: int = 0
 var failures: Array[String] = []
 var trace: Array = []
@@ -18,11 +19,19 @@ func _initialize() -> void:
 	for index in range(args.size() - 1):
 		if args[index] == "--run-id": run_id = args[index + 1]
 		elif args[index] == "--output-dir": output_dir = args[index + 1]
+		elif args[index] == "--card-library-root": library_root = args[index + 1]
 	call_deferred("_run")
 
 func _run() -> void:
-	if run_id.is_empty() or output_dir.is_empty():
+	if run_id.is_empty() or output_dir.is_empty() or library_root.is_empty():
 		push_error("Workshop UI test requires run identity and output directory.")
+		quit(2)
+		return
+	var isolated_base: String = ProjectSettings.globalize_path(output_dir).replace("\\", "/").simplify_path().trim_suffix("/").to_lower()
+	var resolved_library: String = ProjectSettings.globalize_path(library_root).replace("\\", "/").simplify_path().to_lower()
+	var artifacts_base: String = ProjectSettings.globalize_path("res://artifacts").replace("\\", "/").simplify_path().trim_suffix("/").to_lower()
+	if not isolated_base.begins_with(artifacts_base + "/") or not resolved_library.begins_with(isolated_base + "/"):
+		push_error("Workshop tests require a library inside the run output directory.")
 		quit(2)
 		return
 	DirAccess.make_dir_recursive_absolute(output_dir)
@@ -37,17 +46,14 @@ func _run() -> void:
 	host.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	current_scene = host
 	workshop = Workshop.new()
+	workshop.store.configure_from_args(OS.get_cmdline_user_args())
 	host.add_child(workshop)
 	workshop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	await _frames(3)
-	var collection_tests = preload("res://tests/workshop_store_test.gd").new()
-	for result in collection_tests.run(output_dir):
-		_check(result.ok, result.caption)
 	await _workshop_collection()
 	_finish()
 
 func _workshop_collection() -> void:
-	workshop.store.root_path = output_dir.path_join("ui-collection")
 	var template_before: Dictionary = workshop.geometry.template("full").spec().duplicate(true)
 	workshop.open()
 	await _frames(3)
@@ -80,7 +86,7 @@ func _workshop_collection() -> void:
 	await _check_field_readonly()
 	await _inline_focus_interaction()
 	await _click("workshop:save")
-	_check(_state().workshop.count == 1 and not _state().workshop.dirty, "Real save persists a collection card")
+	_check(_state().workshop.count == 21 and not _state().workshop.dirty, "Real save adds a card to the shared library")
 	var first_id: String = _state().workshop.selected_id
 	await _edit("name", "保存后重新选择")
 	await _click("workshop:card:" + first_id)
@@ -186,12 +192,39 @@ func _workshop_collection() -> void:
 	await _click("workshop:delete")
 	_check_modal_layout(workshop._delete)
 	await _click("workshop:delete_cancel")
-	_check(_state().workshop.count == 1, "Cancelling deletion retains collection")
+	_check(_state().workshop.count == 21, "Cancelling deletion retains the added card")
 	await _click("workshop:delete")
 	await _click("workshop:delete_confirm")
-	_check(_state().workshop.count == 0 and workshop.controls.new.is_visible_in_tree(), "Deleting final card keeps new-card entry available")
+	_check(_state().workshop.count == 20 and workshop.controls.new.is_visible_in_tree(), "Deleting the added card preserves the twenty preset definitions")
+	await _readonly_abilities_and_orders()
 	await _click("workshop:close")
 	_record("workshop")
+
+func _readonly_abilities_and_orders() -> void:
+	var target: Control = workshop.controls["card:deploy_draw_infantry"]
+	workshop._collection.ensure_control_visible(target)
+	await _frames(2)
+	await _click("workshop:card:deploy_draw_infantry")
+	var abilities: Array = workshop.draft.definition.abilities.duplicate(true)
+	_check(workshop._field.visible and not workshop._full.display_data.ability_text.is_empty(), "Seeded unit abilities appear in the shared workshop preview")
+	_check(workshop.controls.delete.disabled and not workshop.controls.delete.tooltip_text.is_empty(), "Preset card deletion explains the protected reference")
+	await _edit("attack", "6")
+	await _click("workshop:save")
+	_check(workshop.draft.definition.abilities == abilities, "Editing unit numbers preserves readonly abilities")
+	target = workshop.controls["card:order_buff"]
+	workshop._collection.ensure_control_visible(target)
+	await _frames(2)
+	await _click("workshop:card:order_buff")
+	abilities = workshop.draft.definition.abilities.duplicate(true)
+	_check(not workshop._field.visible and not workshop._full.display_data.ability_text.is_empty(), "Orders show effect text without a field preview")
+	for key in ["action_cost", "attack", "max_hp", "unit_type"]:
+		_check(not workshop.controls[key].visible and not workshop.snapshot_controls().has("workshop:" + key), "Order unit-only edit target is hidden: " + key)
+	await _edit("name", "改名后的强化指令")
+	await _edit("deploy_cost", "1")
+	await _click("workshop:save")
+	_check(not workshop.dirty() and workshop.draft.definition.abilities == abilities and not workshop.draft.definition.has("max_hp"), "Order edits save without losing effects or introducing unit fields")
+	await _click("workshop:new")
+	_check(workshop.draft.definition.card_type == "unit" and workshop.draft.definition.abilities.is_empty() and workshop._field.visible, "Creating after an order starts a clean vanilla unit")
 
 func _check_modal_interaction() -> void:
 	var modal: Control = workshop._guard
@@ -442,6 +475,17 @@ func _state() -> Dictionary:
 	return {"run_id": run_id, "workshop": workshop.snapshot(), "ui_controls": workshop.snapshot_controls()}
 
 func _click(key: String) -> bool:
+	if key.begins_with("workshop:card:") and not _state().workshop.dialog_open:
+		var card: Control = workshop.controls.get(key.trim_prefix("workshop:"))
+		if is_instance_valid(card):
+			for index in range(48):
+				if _state().ui_controls.has(key): break
+				var center: Vector2 = workshop._collection.get_global_rect().get_center()
+				var wheel: int = MOUSE_BUTTON_WHEEL_DOWN if card.get_global_rect().get_center().y > center.y else MOUSE_BUTTON_WHEEL_UP
+				_motion(center)
+				_button(center, true, wheel)
+				_button(center, false, wheel)
+				await _frames(1)
 	var point: Vector2 = _point(key)
 	if point.x < 0: return false
 	_motion(point)

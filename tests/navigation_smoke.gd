@@ -1,4 +1,5 @@
 extends "res://tests/ui_smoke.gd"
+const IntegrationStore = preload("res://scripts/workshop/card_store.gd")
 
 func _run() -> void:
 	root.mode = Window.MODE_WINDOWED
@@ -35,6 +36,9 @@ func _run() -> void:
 	await _tap(workshop.controls.close)
 	await _tap(workshop.controls.guard_discard)
 	_check(current_scene.scene_file_path == "res://scenes/main_menu.tscn", "Discard returns to menu")
+	var store := IntegrationStore.new()
+	store.configure_from_args(OS.get_cmdline_user_args())
+	_check(not store.root_path.begins_with("user://") and store.load_collection().is_empty(), "Navigation uses an explicitly isolated shared library")
 	for terminal in [false, true]:
 		await _tap(current_scene.find_child("battle", true, false))
 		battle = current_scene
@@ -42,23 +46,53 @@ func _run() -> void:
 		_check(_no_development_entries(), "Battle has no workshop instances")
 		var old_battle = weakref(battle)
 		if terminal:
+			_check(_card_named(_domain(), "std_infantry", "共享牌库修改"), "Next battle reads persisted shared card edits")
+			_check(battle._view.profile.artworks != null and battle._view.profile.artworks.resolve("library:infantry-street-assault-v2") != null, "Saved illustration reference resolves through the battle profile")
 			var fixture := _fixture()
 			fixture.phase = "finished"
 			fixture.winner = "player"
 			fixture.sides.ai.hq_hp = 0
 			await _load_fixture(fixture)
 		else:
+			var original: Dictionary = _domain().duplicate(true)
+			for record: Dictionary in store.records:
+				if str(record.id) != "std_infantry": continue
+				var edited: Dictionary = record.duplicate(true)
+				edited.definition.name = "共享牌库修改"
+				edited.artwork.source = "library:infantry-street-assault-v2"
+				_check(store.save_card(edited).is_empty(), "Shared definition can be saved between battles")
+				break
+			_check(_domain() == original and _card_named(original, "std_infantry", "标准步兵"), "Current battle retains its independent card snapshot")
 			await _click("settings")
 		await _click("main_menu", false)
 		await _frames(8)
 		_check(current_scene.scene_file_path == "res://scenes/main_menu.tscn" and old_battle.get_ref() == null, "Return releases battle, terminal=" + str(terminal))
 	await create_timer(0.5).timeout
 	_check(get_nodes_in_group("mcp_watch").is_empty(), "No battle remains on menu")
+	var library_path: String = store.root_path.path_join("cards.json")
+	var valid_library: String = FileAccess.get_file_as_string(library_path)
+	var corrupted := FileAccess.open(library_path, FileAccess.WRITE)
+	corrupted.store_string("invalid-library-json")
+	corrupted.close()
+	await _tap(current_scene.find_child("battle", true, false))
+	_check(current_scene.rules == null and not current_scene.library_error.is_empty() and current_scene.find_child("LibraryError", true, false) != null, "Unreadable library blocks battle and displays its reason")
+	_check(FileAccess.get_file_as_string(library_path) == "invalid-library-json", "Failed battle initialization preserves unreadable library")
+	var restored := FileAccess.open(library_path, FileAccess.WRITE)
+	restored.store_string(valid_library)
+	restored.close()
 	var result := {"run_id": run_id, "status": "passed" if failures.is_empty() else "failed", "assertions": assertions, "failures": failures, "screenshots": screenshots, "trace": trace}
 	var output := FileAccess.open(output_dir.path_join("navigation-result.json"), FileAccess.WRITE)
 	output.store_string(JSON.stringify(result, "\t"))
 	output.close()
 	quit(0 if failures.is_empty() else 1)
+
+func _card_named(state: Dictionary, card_id: String, expected: String) -> bool:
+	var count := 0
+	for unit: Dictionary in state.units.values():
+		if unit.get("card_id", "") == card_id:
+			count += 1
+			if unit.name != expected: return false
+	return count == 4
 
 func _tap(control: Control) -> void:
 	var point := control.get_global_rect().get_center()

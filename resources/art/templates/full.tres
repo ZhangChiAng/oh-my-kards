@@ -24,7 +24,7 @@ slots = {
 "type_icon_box": Rect2(49.4, 114.1, 20, 20),
 "type_icon": Rect2(50.6, 115.3, 17.6, 17.6),
 "type_name": Rect2(4.7, 133.5, 110.6, 11.8),
-"rule_text": Rect2(4.7, 145.3, 110.6, 19.4)
+"rule_text": Rect2(4.7, 135.3, 110.6, 29.4)
 }
 font_sizes = {
 "deploy_cost": 12,
@@ -42,5 +42,5 @@ font_sizes = {
 "type_name_min": 6,
 "rule_text": 7,
 "rule_text_min": 6,
-"rule_lines": 2
+"rule_lines": 3
 }

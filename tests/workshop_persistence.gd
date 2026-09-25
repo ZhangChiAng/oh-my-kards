@@ -3,6 +3,7 @@ extends SceneTree
 var run_id := ""
 var output_dir := ""
 var phase := ""
+var library_root := ""
 var assertions := 0
 var failures: Array[String] = []
 var workshop: Control
@@ -13,10 +14,21 @@ func _initialize() -> void:
 		if args[index] == "--run-id": run_id = args[index + 1]
 		elif args[index] == "--output-dir": output_dir = args[index + 1]
 		elif args[index] == "--phase": phase = args[index + 1]
+		elif args[index] == "--card-library-root": library_root = args[index + 1]
+	if library_root.is_empty():
+		for index in range(args.size() - 1):
+			if args[index] == "--workshop-store": library_root = args[index + 1]
 	call_deferred("_run")
 
 func _run() -> void:
-	if run_id.is_empty() or output_dir.is_empty() or not phase in ["create", "update", "delete", "empty"]:
+	if run_id.is_empty() or output_dir.is_empty() or library_root.is_empty() or not phase in ["create", "update", "delete", "empty"]:
+		quit(2)
+		return
+	var isolated_base: String = ProjectSettings.globalize_path(output_dir).replace("\\", "/").simplify_path().trim_suffix("/").to_lower()
+	var resolved_library: String = ProjectSettings.globalize_path(library_root).replace("\\", "/").simplify_path().to_lower()
+	var artifacts_base: String = ProjectSettings.globalize_path("res://artifacts").replace("\\", "/").simplify_path().trim_suffix("/").to_lower()
+	if not isolated_base.begins_with(artifacts_base + "/") or not resolved_library.begins_with(isolated_base + "/"):
+		push_error("Persistence tests require a library inside the run output directory.")
 		quit(2)
 		return
 	root.mode = Window.MODE_WINDOWED
@@ -30,11 +42,11 @@ func _run() -> void:
 		_finish()
 		return
 	workshop = current_scene.workshop
-	_check(workshop.store.root_path.replace("\\", "/") == output_dir.path_join("persistent-collection").replace("\\", "/"), "Production workshop uses isolated collection")
+	_check(workshop.store.root_path.replace("\\", "/") == library_root.replace("\\", "/"), "Production workshop uses the explicit isolated shared library")
 	if phase == "create":
 		await _create()
 	elif phase == "empty":
-		_check(workshop.store.records.is_empty(), "Deletion remains effective after another process restart")
+		_check(workshop.store.records.size() == 20 and workshop.store.preset_deck().size() == 40, "Deletion remains effective after restart while preset definitions remain")
 	else:
 		await _restore()
 	_finish()
@@ -71,17 +83,21 @@ func _create() -> void:
 	_mouse(point + Vector2(24, 14), false)
 	await _frames(2)
 	await _click("save")
-	_check(not workshop.dirty() and workshop.store.records.size() == 1, "Production save creates persistent record")
-	_check(workshop.draft.definition == {"name": "持久收藏测试", "unit_type": "tank", "deploy_cost": 7, "action_cost": 7, "attack": 7, "max_hp": 7}, "Saved definition matches the requested name, type and all four numbers")
+	_check(not workshop.dirty() and workshop.store.records.size() == 21, "Production save adds one persistent record to the shared library")
+	_check(workshop.draft.definition == {"card_type": "unit", "name": "持久收藏测试", "unit_type": "tank", "deploy_cost": 7, "action_cost": 7, "attack": 7, "max_hp": 7, "keywords": {}, "abilities": [], "auras": []}, "Saved definition matches requested edits and retains empty ability fields")
 	var saved: Variant = JSON.parse_string(FileAccess.get_file_as_string(workshop.store.root_path.path_join("cards.json")))
-	_check(saved is Dictionary and saved.get("version") == 2, "Production collection writes version 2")
+	_check(saved is Dictionary and saved.get("version") == 3, "Production shared library writes version 3")
 	_check(workshop.draft.artwork.source.begins_with("image:") and workshop.draft.artwork.zoom > 1, "Saved record includes imported art and non-default crop")
 	_write_expected()
 	_check(DirAccess.remove_absolute(source) == OK, "Original import source removed before process ends")
 
 func _restore() -> void:
 	var expected: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(output_dir.path_join("persistent-expected.json")))
-	if not _check(workshop.store.records.size() == 1, "Fresh process restores one saved card"): return
+	if not _check(workshop.store.records.size() == 21, "Fresh process restores the saved card alongside preset definitions"): return
+	var saved_control: Control = workshop.controls.get("card:" + str(expected.id))
+	if saved_control != null:
+		workshop._collection.ensure_control_visible(saved_control)
+		await _frames(2)
 	await _click("card:" + str(expected.id))
 	var actual: Variant = JSON.parse_string(JSON.stringify(workshop.draft))
 	_check(actual == expected, "Identity, complete definition, illustration reference and crop survive restart")
@@ -95,7 +111,7 @@ func _restore() -> void:
 	else:
 		await _click("delete")
 		await _click("delete_confirm")
-		_check(workshop.store.records.is_empty(), "Confirmation deletes restored card")
+		_check(workshop.store.records.size() == 20 and not workshop.store.definitions().has(expected.id), "Confirmation deletes the restored custom card while preserving preset definitions")
 
 func _write_expected() -> void:
 	var file := FileAccess.open(output_dir.path_join("persistent-expected.json"), FileAccess.WRITE)

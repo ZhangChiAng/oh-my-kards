@@ -6,6 +6,8 @@ const InlineEditor = preload("res://scripts/workshop/inline_card_editor.gd")
 const IllustrationThumbnail = preload("res://scripts/workshop/illustration_thumbnail.gd")
 const CardView = preload("res://scripts/art/art_card.gd")
 const Catalog = preload("res://scripts/card_catalog.gd")
+const Schema = preload("res://scripts/card_schema.gd")
+const ArtworkResolver = preload("res://scripts/art/card_artwork_resolver.gd")
 const Crop = preload("res://scripts/art/artwork_crop.gd")
 const UnitIcon = preload("res://scripts/art/unit_icon.gd")
 const Profile = preload("res://resources/art/ancient_metal_profile.tres")
@@ -214,7 +216,7 @@ func _adapt_layout() -> void:
 	_field.position.x = minf(_field.position.x, controls.close.position.x - 90 * field_scale - 16 * button_scale)
 	_place(controls.save, Rect2(_full.position.x, _full.position.y + full_size.y + 18, full_size.x * 0.62 - 6, 48))
 	_place(controls.delete, Rect2(_full.position.x + full_size.x * 0.62 + 6, _full.position.y + full_size.y + 18, full_size.x * 0.38 - 6, 48))
-	var gy: float = _field.position.y + 123 * field_scale + 30
+	var gy: float = _field.position.y + 123 * field_scale + 30 if _field.visible else 96.0
 	_place(_gallery, Rect2(rx, gy, right, maxf(80, size.y - gy - 100)))
 	_place(controls.import, Rect2(rx, size.y - 68, right, 44))
 	_place(_notice, Rect2(left + margin * 2, size.y - 30, center, 28))
@@ -267,6 +269,8 @@ func _load(card: Dictionary) -> void:
 	_cached_texture = null
 	_notice.text = ""
 	_preview()
+	_adapt_layout()
+	_scroll_to_selected.call_deferred()
 
 func _input(event: InputEvent) -> void:
 	if not visible or _edit_key.is_empty(): return
@@ -275,6 +279,7 @@ func _input(event: InputEvent) -> void:
 			_end_edit()
 
 func _begin_edit(key: String) -> void:
+	if draft.get("definition", {}).get("card_type", "unit") == "order" and key not in ["name", "deploy_cost"]: return
 	_end_edit()
 	_edit_key = key
 	_edit_before = draft.definition[key]
@@ -311,6 +316,7 @@ func _end_edit(cancel: bool = false) -> void:
 	_preview()
 
 func _choose_type() -> void:
+	if draft.get("definition", {}).get("card_type", "unit") == "order": return
 	_end_edit()
 	_type_menu.popup(Rect2i(Vector2i(controls.unit_type.global_position), Vector2i(220, 260)))
 
@@ -327,28 +333,40 @@ func _preview() -> void:
 		_cached_source = source
 		_cached_texture = null
 		if source.begins_with("image:"):
-			var img: Image = imported
-			if img == null: img = Image.load_from_file(store.image_path(source)) if FileAccess.file_exists(store.image_path(source)) else null
-			if img != null and not img.is_empty(): _cached_texture = ImageTexture.create_from_image(img)
+			_cached_texture = ImageTexture.create_from_image(imported) if imported != null else ArtworkResolver.resolve_source(source, store.root_path.path_join("images"))
 			profile.artworks.register_texture(source, _cached_texture)
-		else: _cached_texture = profile.artworks.resolve(source)
+		else: _cached_texture = ArtworkResolver.resolve_source(source, store.root_path.path_join("images"))
 	if not source.is_empty() and _cached_texture == null:
 		_notice.text = "卡图缺失，请重新选择插画。"
 	elif _notice.text == "卡图缺失，请重新选择插画。":
 		_notice.text = ""
 	var data: Dictionary = draft.definition.duplicate(true)
+	var order: bool = data.get("card_type", "unit") == "order"
 	data.card_id = draft.id
-	data.hp = data.max_hp
+	if not order: data.hp = data.max_hp
 	data.wrap_name = true
 	data.artwork = draft.artwork.duplicate(true)
-	_field.configure(data, "field", profile, geometry.template("field"))
+	data.ability_text = Schema.ability_text(data)
+	data.detail_text = Schema.detail_text(data)
+	var badges: Array[String] = Schema.keyword_badges(data)
+	for ability: Dictionary in data.get("abilities", []):
+		var badge: String = {"deploy": "部署", "aftermath": "余波"}.get(ability.get("trigger", ""), "")
+		if not badge.is_empty() and not badges.has(badge): badges.append(badge)
+	if not data.get("auras", []).is_empty(): badges.append("协同")
+	data.keyword_text = " · ".join(badges)
+	data.type_name = "指令" if order else Catalog.type_name(str(data.unit_type))
+	_field.visible = not order
+	if not order: _field.configure(data, "field", profile, geometry.template("field"))
+	for key in ["action_cost", "attack", "max_hp", "unit_type"]: controls[key].visible = not order
 	data.editing_slot = "health" if _edit_key == "max_hp" else _edit_key
 	_full.configure(data, "full", profile, geometry.template("full"))
 	_full.pivot_offset = Vector2.ZERO
 	_field.pivot_offset = Vector2.ZERO
-	controls.unit_type.tooltip_text = Catalog.type_name(draft.definition.unit_type)
+	controls.unit_type.tooltip_text = "" if order else Catalog.type_name(draft.definition.unit_type)
 	controls.save.disabled = not store.writable or not store.validate(draft).is_empty()
-	controls.delete.disabled = not store.writable or not store.records.any(func(record: Variant): return record is Dictionary and record.get("id") == draft.id)
+	var preset: bool = store.is_preset_card(str(draft.id))
+	controls.delete.disabled = preset or not store.writable or not store.records.any(func(record: Variant): return record is Dictionary and record.get("id") == draft.id)
+	controls.delete.tooltip_text = "该卡用于当前固定牌组，不能删除" if preset else ""
 	for key in controls:
 		if str(key).begins_with("card:"): controls[key].set_pressed_no_signal(str(key) == "card:" + str(draft.id))
 		if str(key).begins_with("art:"):
@@ -407,6 +425,10 @@ func _load_saved(id: String) -> void:
 			_load(record)
 			return
 
+func _scroll_to_selected() -> void:
+	var selected: Control = controls.get("card:" + str(draft.get("id", "")))
+	if is_instance_valid(selected): _collection.ensure_control_visible(selected)
+
 func _save() -> bool:
 	_end_edit()
 	var error: String = store.save_card(draft, imported)
@@ -418,6 +440,7 @@ func _save() -> bool:
 	baseline = draft.duplicate(true)
 	_refresh_list()
 	_preview()
+	_scroll_to_selected.call_deferred()
 	_notice.text = ""
 	return true
 

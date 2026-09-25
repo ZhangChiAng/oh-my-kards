@@ -78,6 +78,7 @@ var _row_preview_key: String = ""
 var _row_base: Dictionary = {}
 var _row_tweens: Dictionary = {}
 var _row_return_from: Dictionary = {}
+var _effect_regions: Dictionary = {}
 
 
 func _process(_delta: float) -> void:
@@ -288,6 +289,7 @@ func _apply_layout() -> void:
 	_overlay.size = size
 	_overlay.profile = display_profile
 	_overlay.presentation_scale = _layout.art_scale
+	_overlay.hint_rect = Layout.rect(_layout, Rect2(260, 44, 380, 26))
 	_modal_blocker.size = size
 	_modal_blocker.color = Color(display_profile.visual_theme.color("shadow"), float(display_profile.visual_theme.surface.strokes.modal_alpha))
 	for key in _labels:
@@ -334,6 +336,7 @@ func render(state: Dictionary, actions: Array, interaction: Dictionary, selected
 	var idle: bool = interaction.get("state", "idle") == "idle"
 	presentation_set_status(_presentation_status if _presentation_run != null and not _presentation_run.done and not _presentation_status.is_empty() else state)
 	_sync_cards()
+	if interaction.get("state", "") == "choosing_deploy": _row_preview_key = ""
 	_stop_row_tweens()
 	if not interaction.get("presentation_busy", false):
 		for key in _row_return_from:
@@ -364,6 +367,8 @@ func presentation_set_status(state: Dictionary) -> void:
 	var idle: bool = _interaction.get("state", "idle") == "idle"
 	_labels.phase.text = (text.caption("victory") if state.winner == "player" else text.caption("defeat")) if finished else ("" if mulligan else (text.caption("player_turn") if Presenter.player_turn(state) else text.caption("enemy_turn")))
 	_labels.phase.show()
+	if finished and state.winner == "draw": _labels.phase.text = text.caption("draw")
+	if state.phase == "waiting_choice": _labels.phase.text = "选择效果目标" if state.get("pending_choice", {}).get("owner", "") == "player" else "对手选择目标"
 	_labels.turn.show()
 	_labels.turn.text = (text.caption("first_player") if state.first_side == "player" else text.caption("second_player")) if mulligan else text.caption("turn_number") % state.turn
 	var control: String = text.caption("front_neutral") if state.frontline_ids.is_empty() else (text.caption("front_player") if state.units[state.frontline_ids[0]].owner == "player" else text.caption("front_enemy"))
@@ -405,6 +410,7 @@ func _sync_cards() -> void:
 	_hand_poses.clear()
 	_gap_points.clear()
 	var mulligan: bool = _state.phase == "mulligan"
+	_sync_effect_regions(not mulligan)
 	for side in ["player", "ai"]: _controls["hq:" + side].visible = not mulligan
 	if not mulligan:
 		_layout_support("ai", "enemy")
@@ -429,6 +435,29 @@ func _sync_cards() -> void:
 		back.apply_pose(Layout.enemy_back_pose(_layout, index, enemy_count))
 		back.z_index = int(geometry.layout.layers.enemy_hand) + index
 		back.visible = index < enemy_count and not mulligan
+
+
+func _sync_effect_regions(shown: bool) -> void:
+	for side in ["player", "ai"]:
+		for row in ["support", "frontline"]:
+			var key: String = "row:%s:%s" % [side, row]
+			if not _effect_regions.has(key):
+				var region := Control.new()
+				region.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				add_child(region)
+				_effect_regions[key] = region
+			var y: float = _layout.front_y if row == "frontline" else (_layout.player_y if side == "player" else _layout.enemy_y)
+			_set_rect(_effect_regions[key], Rect2(_layout.row_left, y, _layout.row_right - _layout.row_left, _layout.field_size.y))
+			_effect_regions[key].visible = shown
+			_controls[key] = _effect_regions[key]
+	if not _effect_regions.has("cast:player"):
+		var region := Control.new()
+		region.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(region)
+		_effect_regions["cast:player"] = region
+	_set_rect(_effect_regions["cast:player"], Layout.rect(_layout, Rect2(770, 417, 115, 60)))
+	_effect_regions["cast:player"].visible = shown
+	_controls["cast:player"] = _effect_regions["cast:player"]
 
 
 func _layout_support(side: String, row: String) -> void:
@@ -561,11 +590,14 @@ func pick_source(point: Vector2) -> String:
 
 func pick_drop(point: Vector2) -> String:
 	if is_ui_point(point): return ""
+	var legal: Array = _interaction.get("legal_target_keys", [])
 	for key in _controls:
-		var enemy: bool = str(key).begins_with("unit:") and _state.units[str(key).get_slice(":", 1)].owner == "ai"
-		if (enemy or key == "hq:ai") and _controls[key].contains_point(point): return str(key)
+		if not legal.has(key): continue
+		if (str(key).begins_with("unit:") or str(key).begins_with("hq:")) and _controls[key].contains_point(point): return str(key)
+	for key in _effect_regions:
+		if legal.has(key) and _effect_regions[key].get_global_rect().has_point(point): return str(key)
 	for key in _gap_points:
-		if _controls[key].get_global_rect().has_point(point): return str(key)
+		if legal.has(key) and _controls[key].get_global_rect().has_point(point): return str(key)
 	return ""
 
 
@@ -677,12 +709,15 @@ func _update_detail(key: String) -> void:
 		_hide_detail()
 		return
 	var data: Dictionary = Presenter.unit_data(_state, id, _actions, text, _selected)
-	_rules_text.text = text.caption("unit_detail") % [data.name, data.type_name, data.rule_description]
+	_rules_text.text = str(data.name) + "\n" + ("指令" if data.get("card_type", "unit") == "order" else str(data.type_name))
+	if not str(data.get("detail_text", "")).is_empty(): _rules_text.text += "\n\n" + str(data.detail_text)
+	if data.get("suppressed", false): _rules_text.text += "\n\n压制：直到该单位拥有者的下个回合结束，不能主动移动或攻击；原有反击与被动保护仍生效。"
 	_rules_text.add_theme_font_size_override("font_size", _layout.body_font)
 	var padding: float = float(geometry.layout.detail_padding) * float(_layout.art_scale)
 	var width: float = float(_layout.rects.detail_rules.size.x)
 	var text_size: Vector2 = display_profile.visual_theme.surface.font.get_multiline_string_size(_rules_text.text, HORIZONTAL_ALIGNMENT_LEFT, width - padding * 2.0, _layout.body_font, -1, TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE)
 	var panel_size: Vector2 = _layout.rects.detail_rules.size
+	panel_size.y = minf(maxf(panel_size.y, text_size.y + padding * 2.0), size.y - padding * 2.0)
 	var detail_geometry: Dictionary = Layout.detail_geometry(_layout, _controls[key].screen_rect(), panel_size, true, _fixed_ui_rects())
 	_detail_geometry = detail_geometry.duplicate(true)
 	_detail_geometry["text_height"] = text_size.y
@@ -702,6 +737,7 @@ func detail_snapshot() -> Dictionary:
 	result["rules_rect"] = _rules_detail.get_global_rect() if _rules_detail.visible else Rect2()
 	result["card_rect"] = _detail.screen_rect() if _detail.visible else Rect2()
 	result["font_size"] = _layout.body_font
+	result["text"] = _rules_text.text
 	return result
 
 
@@ -752,7 +788,7 @@ func snapshot_controls() -> Dictionary:
 		var headquarters: bool = str(key).begins_with("hq:")
 		var rect: Rect2 = control.screen_rect() if card or headquarters else control.get_global_rect()
 		var draggable: bool = card and not is_modal_open() and _interaction.get("state", "idle") == "idle" and _player_turn() and _source_legal(str(key).get_slice(":", 1))
-		var drop: bool = not is_modal_open() and _interaction.get("state", "idle") == "dragging" and _interaction.get("legal_target_keys", []).has(key)
+		var drop: bool = not is_modal_open() and _interaction.get("state", "idle") in ["dragging", "choosing_deploy", "choosing_choice"] and _interaction.get("legal_target_keys", []).has(key)
 		var enabled: bool = draggable or drop
 		if control is BaseButton: enabled = not control.disabled
 		elif str(key).begins_with("hand:") and _state.phase == "mulligan": enabled = not _state.sides.player.mulligan_done and not is_modal_open()
@@ -762,8 +798,14 @@ func snapshot_controls() -> Dictionary:
 
 
 func _update_targets() -> void:
-	var dragging: bool = _interaction.get("state", "idle") == "dragging" and not is_modal_open()
+	var dragging: bool = _interaction.get("state", "idle") in ["dragging", "choosing_deploy", "choosing_choice"] and not is_modal_open()
 	var legal: Array = _interaction.get("legal_target_keys", [])
+	_overlay.regions = []
+	for key in _effect_regions:
+		if dragging and legal.has(key):
+			_overlay.regions.append({"rect": _effect_regions[key].get_global_rect(), "caption": "松开施放" if key == "cast:player" else "选择此阵线"})
+	_overlay.active = dragging
+	_overlay.hint = "选择效果目标 · 右键或 Esc 取消" if _interaction.get("state", "") == "choosing_deploy" else ("选择效果目标" if _interaction.get("state", "") == "choosing_choice" else "")
 	for key in _controls:
 		if _is_gap(str(key)): continue
 		elif str(key).begins_with("unit:"):
@@ -784,12 +826,21 @@ func show_drag(interaction: Dictionary, cursor: Vector2, source: Dictionary) -> 
 	var target_key: String = str(interaction.hover_target_key)
 	var legal: bool = interaction.legal_target_keys.has(target_key)
 	_overlay.active = true
-	_overlay.arrow = interaction.source_zone != "hand"
+	var choosing: bool = str(interaction.state) in ["choosing_deploy", "choosing_choice"]
+	var source_data: Dictionary = _state.units.get(str(interaction.source_id), {})
+	_overlay.arrow = interaction.source_zone != "hand" or choosing or source_data.get("card_type", "unit") == "order"
 	_overlay.legal = legal
 	_overlay.start = source.position + source.size * 0.5
 	_overlay.cursor = cursor
-	_preview_insertion(target_key if legal and _is_gap(target_key) else "")
-	_drag_preview.visible = interaction.source_zone == "hand"
+	var provisional: Dictionary = {}
+	if interaction.state == "choosing_deploy":
+		var index: int = int(interaction.candidate_actions[0].insert_index)
+		var reserved_key: String = "support:player:%d" % index
+		_preview_insertion(reserved_key)
+		provisional = Layout.row_pose(_layout, "player", "field", index, _state.sides.player.support_ids.size() + 2)
+		_overlay.start = provisional.position + provisional.size * 0.5
+	else: _preview_insertion(target_key if legal and _is_gap(target_key) else "")
+	_drag_preview.visible = interaction.source_zone == "hand" and not choosing and source_data.get("card_type", "unit") != "order"
 	var id: String = str(interaction.source_id)
 	if _cards.has(id):
 		_cards[id].modulate.a = float(display_profile.visual_theme.surface.strokes.drag_source_alpha) if interaction.source_zone == "hand" else 1.0
@@ -798,6 +849,10 @@ func show_drag(interaction: Dictionary, cursor: Vector2, source: Dictionary) -> 
 		_drag_preview.configure(data, "full" if interaction.source_zone == "hand" else "field", display_profile, geometry.template("full" if interaction.source_zone == "hand" else "field"))
 		var preview_size: Vector2 = _layout.full_size if interaction.source_zone == "hand" else _layout.field_size
 		_drag_preview.apply_pose({"position": cursor - preview_size * 0.5, "size": preview_size, "rotation": 0.0, "scale": Vector2.ONE})
+		if not provisional.is_empty():
+			_drag_preview.configure(data, "field", display_profile, geometry.template("field"))
+			_drag_preview.apply_pose(provisional)
+			_drag_preview.show()
 	_update_targets()
 
 

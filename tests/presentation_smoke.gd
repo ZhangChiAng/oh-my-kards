@@ -32,6 +32,8 @@ func _run() -> void:
 	await _terminal_delay()
 	await _resize_cancels_animation()
 	await _restart_during_animation()
+	await _effect_sequence_and_interruption()
+	await _draw_terminal()
 	_finish()
 
 
@@ -80,8 +82,10 @@ func _skin_timing_and_simultaneous_damage() -> void:
 		battle._view.geometry_debug = debug_enabled
 		var profile_path: String = "geometry_debug" if debug_enabled else "material"
 		var fixture: Dictionary = _fixture()
-		_put(fixture, "attacker", "player", "frontline", "dust_rover")
-		_put(fixture, "defender", "ai", "support", "dust_rover")
+		_put(fixture, "attacker", "player", "frontline", "raid_tank")
+		_put(fixture, "defender", "ai", "support", "raid_tank")
+		fixture.units.attacker.attack = 2
+		fixture.units.defender.attack = 2
 		if not await _load_fixture(fixture): return
 		if not await _begin_drag("unit:attacker", "unit:defender"): return
 		_button(_point("unit:defender"), false)
@@ -106,7 +110,7 @@ func _frontline_geometry_and_transition() -> void:
 		if not await _load_fixture(ownership_fixture): return
 		_check(is_equal_approx(float(_state().presentation.frontline_y), _frontline_anchor(owner)), "Public frontline ownership selects the divider anchor: " + owner)
 	var fixture: Dictionary = _fixture()
-	_put(fixture, "frontline-mover", "player", "support", "dust_rover")
+	_put(fixture, "frontline-mover", "player", "support", "raid_tank")
 	if not await _load_fixture(fixture): return
 	if not await _begin_drag("unit:frontline-mover", "frontline:0"): return
 	_button(_point("frontline:0"), false)
@@ -129,6 +133,7 @@ func _terminal_delay() -> void:
 	var fixture: Dictionary = _fixture()
 	fixture.sides.ai.hq_hp = 1
 	_put(fixture, "finisher", "player", "frontline")
+	fixture.units.finisher.attack = 1
 	if not await _load_fixture(fixture): return
 	var old_end_turn: Vector2 = _point("end_turn")
 	if not await _begin_drag("unit:finisher", "hq:ai"): return
@@ -155,8 +160,8 @@ func _terminal_delay() -> void:
 
 func _restart_during_animation() -> void:
 	var fixture: Dictionary = _fixture()
-	_put(fixture, "restart-attacker", "player", "frontline", "bastion")
-	_put(fixture, "restart-defender", "ai", "support", "bastion")
+	_put(fixture, "restart-attacker", "player", "frontline", "armor_tank")
+	_put(fixture, "restart-defender", "ai", "support", "armor_tank")
 	if not await _load_fixture(fixture): return
 	if not await _begin_drag("unit:restart-attacker", "unit:restart-defender"): return
 	_button(_point("unit:restart-defender"), false)
@@ -180,8 +185,8 @@ func _restart_during_animation() -> void:
 
 func _resize_cancels_animation() -> void:
 	var fixture: Dictionary = _fixture()
-	_put(fixture, "resize-attacker", "player", "frontline", "bastion")
-	_put(fixture, "resize-defender", "ai", "support", "bastion")
+	_put(fixture, "resize-attacker", "player", "frontline", "armor_tank")
+	_put(fixture, "resize-defender", "ai", "support", "armor_tank")
 	if not await _load_fixture(fixture): return
 	if not await _begin_drag("unit:resize-attacker", "unit:resize-defender"): return
 	_button(_point("unit:resize-defender"), false)
@@ -205,8 +210,52 @@ func _resize_cancels_animation() -> void:
 	await _frames(3)
 
 
+func _effect_sequence_and_interruption() -> void:
+	var fixture: Dictionary = _fixture()
+	_put(fixture, "effect-deployer", "player", "hand", "deploy_damage_artillery")
+	_put(fixture, "aftermath-victim", "ai", "support", "aftermath_draw_infantry")
+	_put(fixture, "private-after-draw", "ai", "draw")
+	if not await _load_fixture(fixture): return
+	if not await _begin_drag("hand:effect-deployer", "support:player:0"): return
+	_button(_point("support:player:0"), false)
+	await _frames(1)
+	if not await _click("unit:aftermath-victim", false): return
+	var observed: Dictionary = await _observe()
+	var sequence: Array = observed.sequence
+	_check(sequence.find("effect_damage") >= 0 and sequence.find("unit_destroyed") > sequence.find("effect_damage") and sequence.rfind("ability_triggered") > sequence.find("unit_destroyed") and sequence.find("card_drawn") > sequence.rfind("ability_triggered"), "Deployment damage, destruction, aftermath and draw animate in rule event order")
+	_check(not JSON.stringify(observed).contains("private-after-draw") and _anonymous_history(), "Aftermath presentation and history preserve hidden draw identities")
+	_check(_domain().sides.ai.discard_ids.has("aftermath-victim") and _domain().sides.ai.hand_ids.size() == 1, "Effect animation settles on the complete chain result")
+	fixture = _fixture()
+	_put(fixture, "cancel-order", "player", "hand", "order_row_damage")
+	_put(fixture, "area-one", "ai", "support", "std_bomber")
+	_put(fixture, "area-two", "ai", "support", "std_bomber")
+	if not await _load_fixture(fixture): return
+	if not await _begin_drag("hand:cancel-order", "row:ai:support"): return
+	_button(_point("row:ai:support"), false)
+	await _frames(1)
+	var accepted: Dictionary = _domain()
+	var active_run: RefCounted = battle._view._presentation_run
+	root.size = Vector2i(1280, 720)
+	if not await _idle(): return
+	_check(active_run.done and active_run.cancelled and _domain() == accepted and _domain().units["area-one"].hp == 5 and _domain().units["area-two"].hp == 5, "Interrupting the area-effect animation preserves both accepted damage results")
+	root.size = MAIN_WINDOW
+	await _frames(3)
+
+
+func _draw_terminal() -> void:
+	var fixture: Dictionary = _fixture()
+	_put(fixture, "mutual-destruction", "player", "hand", "order_draw")
+	fixture.units["mutual-destruction"].abilities = [{"trigger": "play", "effects": [{"op": "damage", "target": "all_hqs", "amount": 20}]}]
+	if not await _load_fixture(fixture): return
+	if not await _begin_drag("hand:mutual-destruction", "cast:player"): return
+	_button(_point("cast:player"), false)
+	var observed: Dictionary = await _observe({}, {}, true)
+	_check(observed.terminal_hidden and _domain().winner == "draw", "Simultaneous headquarters destruction resolves as a draw after presentation")
+	_check(str(battle._view._labels.modal_title.text).contains("平局") and str(battle._view._labels.phase.text).contains("平局") and str(_state().history.entries.back().text).contains("平局"), "Draw result appears consistently in phase, modal and public history")
+
+
 func _observe(before_hp: Dictionary = {}, hit_hp: Dictionary = {}, terminal: bool = false) -> Dictionary:
-	var result: Dictionary = {"stages": [], "duration": 0.0, "before_checked": false, "before_valid": true, "before_counters_valid": true, "hit_checked": false, "hit_valid": true, "terminal_hidden": true, "frontline_values": []}
+	var result: Dictionary = {"stages": [], "sequence": [], "duration": 0.0, "before_checked": false, "before_valid": true, "before_counters_valid": true, "hit_checked": false, "hit_valid": true, "terminal_hidden": true, "frontline_values": []}
 	var deadline: int = Time.get_ticks_msec() + 5000
 	var seen_running: bool = false
 	while Time.get_ticks_msec() < deadline:
@@ -223,6 +272,7 @@ func _observe(before_hp: Dictionary = {}, hit_hp: Dictionary = {}, terminal: boo
 			if result.frontline_values.is_empty() or not is_equal_approx(float(result.frontline_values.back()), float(presentation.frontline_y)):
 				result.frontline_values.append(float(presentation.frontline_y))
 			if not result.stages.has(stage_name): result.stages.append(stage_name)
+			if result.sequence.is_empty() or result.sequence.back() != stage_name: result.sequence.append(stage_name)
 			if stage_name in ["attack_windup", "attack_line"] and not before_hp.is_empty():
 				result.before_checked = true
 				result.before_valid = result.before_valid and _visible_hp_matches(before_hp)

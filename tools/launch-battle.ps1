@@ -3,7 +3,8 @@
 param(
     [string]$Profile,
     [switch]$GeometryDebug,
-    [int]$Seed = 20260917
+    [int]$Seed = 20260917,
+    [string]$CardLibraryRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,6 +31,7 @@ $startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Normal
 $battleArguments = @('--path', $projectRoot, '--rendering-method', 'gl_compatibility', '--maximized', $scene, '--', '--seed', "$Seed")
 if ($Profile) { $battleArguments += @('--profile', $Profile) }
 if ($GeometryDebug) { $battleArguments += '--geometry-debug' }
+if ($CardLibraryRoot) { $battleArguments += @('--card-library-root', [IO.Path]::GetFullPath($CardLibraryRoot)) }
 foreach ($argument in $battleArguments) {
     [void]$startInfo.ArgumentList.Add($argument)
 }

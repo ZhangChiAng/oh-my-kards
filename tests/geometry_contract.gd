@@ -152,6 +152,11 @@ func _reference_bounds(geometry: Resource, baseline: Dictionary) -> void:
 			if sample.mode == "field":
 				if sample.key == "artwork_rect": expected.size.y += 3.0 * factor
 				elif sample.key in ["attack_box", "health_box", "type_icon_box"]: expected.position.y += 4.0 * factor
+			# Ability text now occupies the previously unused type line as well.
+			# Preserve the measured lower boundary and the card's outer geometry.
+			if sample.mode == "full" and sample.key == "rule_text":
+				expected.position.y -= 10.0 * factor
+				expected.size.y += 10.0 * factor
 		var error: float = _edge_error(actual, expected)
 		_check(error <= float(sample.tolerance_1920_px), "Measured card region within 6 px: %s/%s" % [sample.mode, sample.key])
 		trace.append({"kind": "card-region", "mode": sample.mode, "key": sample.key, "maximum_edge_error": error})

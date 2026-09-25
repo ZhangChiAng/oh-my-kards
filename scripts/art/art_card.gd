@@ -54,20 +54,21 @@ func _draw() -> void:
 
 
 func _draw_full(definition: Resource, visual_theme: Resource) -> void:
+	var order: bool = str(display_data.get("card_type", "unit")) == "order"
 	Widgets.draw_plate(self, visual_theme, "full_face", Rect2(Vector2.ZERO, definition.size))
 	Widgets.draw_plate(self, visual_theme, _faction_style("header"), _slot("header"))
 	Widgets.draw_plate(self, visual_theme, "deploy_box", _slot("deploy_box"))
 	_text("deploy_cost", str(display_data.get("deploy_cost", 0)), definition, visual_theme, "gold" if display_data.get("ready", false) else "muted", true)
 	_text("deploy_unit", str(display_data.get("command_unit", "")), definition, visual_theme, "muted", true)
-	_text("action_cost", str(display_data.get("action_cost", 0)), definition, visual_theme, "muted", true)
+	if not order: _text("action_cost", str(display_data.get("action_cost", 0)), definition, visual_theme, "muted", true)
 	_text("name", str(display_data.get("name", "")), definition, visual_theme, "text", false, display_data.get("wrap_name", false))
 	visual_theme.renderer.draw_artwork(self, visual_theme, profile.artworks, display_data, mode, definition.artwork_rect)
-	for box in ["attack_box", "type_icon_box", "health_box"]:
-		Widgets.draw_plate(self, visual_theme, "full_stats", _slot(box))
-	_text("attack", str(display_data.get("attack", 0)), definition, visual_theme, "text", true)
-	_text("health", str(display_data.get("hp", 0)), definition, visual_theme, _health_color(), true)
-	_text("type_name", str(display_data.get("type_name", "")), definition, visual_theme, "ink")
-	_text("rule_text", str(display_data.get("rule_text", "")), definition, visual_theme, "ink", false, true)
+	if not order:
+		for box in ["attack_box", "type_icon_box", "health_box"]:
+			Widgets.draw_plate(self, visual_theme, "full_stats", _slot(box))
+		_text("attack", str(display_data.get("attack", 0)), definition, visual_theme, "text", true)
+		_text("health", str(display_data.get("hp", 0)), definition, visual_theme, _health_color(), true)
+	_text("rule_text", str(display_data.get("ability_text", "")), definition, visual_theme, "text", false, true)
 	Widgets.draw_frame(self, visual_theme, definition)
 
 
@@ -85,6 +86,7 @@ func _draw_field(definition: Resource, visual_theme: Resource) -> void:
 	_text("attack", str(display_data.get("attack", 0)), definition, visual_theme, "text", true)
 	_text("health", str(display_data.get("hp", 0)), definition, visual_theme, _health_color(), true)
 	_text("type_name", str(display_data.get("type_name", "")), definition, visual_theme, "text")
+	_text("keywords", str(display_data.get("keyword_text", "")), definition, visual_theme, "hurt" if display_data.get("suppressed", false) else "text", false, true)
 	Widgets.draw_frame(self, visual_theme, definition)
 
 
