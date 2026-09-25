@@ -102,5 +102,8 @@ styles = {
 "close_icon": SubResource("close_icon"),
 "mulligan_mark": SubResource("stamp")
 }
-colors = {"control_text": Color(0.894, 0.898, 0.875, 1), "control_muted": Color(0.51, 0.54, 0.55, 1), "control_gold": Color(0.847, 0.808, 0.671, 1)}
+colors = {"control_text": Color(0.894, 0.898, 0.875, 1), "control_muted": Color(0.51, 0.54, 0.55, 1), "control_gold": Color(0.847, 0.808, 0.671, 1), "control_danger": Color(0.76, 0.25, 0.23, 1)}
+
+
+metrics = {"modal_title_size": 28.0, "modal_text_size": 22.0, "modal_button_size": 22.0, "min_title": 24.0, "min_text": 18.0, "min_button": 18.0}
 

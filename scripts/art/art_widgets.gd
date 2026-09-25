@@ -158,44 +158,55 @@ static func theme_color(canvas: CanvasItem, visual_theme: Resource, color_role: 
 	return visual_theme.color(color_role)
 
 
-static func draw_fitted_text(canvas: CanvasItem, visual_theme: Resource, definition: Resource, key: String, value: String, color_role: String, numeric: bool = false, wrap: bool = false, alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_CENTER) -> Dictionary:
+static func fitted_text_layout(visual_theme: Resource, definition: Resource, key: String, value: String, numeric: bool = false, wrap: bool = false, alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_CENTER) -> Dictionary:
 	var rect: Rect2 = slot(definition, key)
 	var preferred: int = int(definition.font_sizes.get(key, 0))
 	var minimum: int = clampi(int(definition.font_sizes.get(key + "_min", preferred)), 1, maxi(1, preferred))
 	var font: Font = visual_theme.surface.number_font if numeric else visual_theme.surface.font
-	if not value.is_empty():
-		if font == null: record_missing(canvas, "font", "number_font" if numeric else "font")
-		if not rect.has_area(): record_missing(canvas, "slot", key)
-		if preferred <= 0: record_missing(canvas, "font_size", key)
-	if font == null or not rect.has_area() or value.is_empty() or preferred <= 0:
+	if font == null or not rect.has_area() or preferred <= 0:
 		return {"slot": rect, "text": value, "drawn": false}
 	var maximum_lines: int = int(definition.font_sizes.rule_lines) if wrap else 1
 	var chosen: int = maxi(1, preferred)
 	var lines: Array[String] = []
 	var fits: bool = false
 	while chosen >= maxi(1, minimum):
-		if wrap:
-			lines = wrap_lines(font, value, chosen, rect.size.x)
-		else:
-			lines.assign([value])
+		if wrap: lines = wrap_lines(font, value, chosen, rect.size.x)
+		else: lines.assign([value])
 		fits = lines.size() <= maximum_lines and font.get_height(chosen) * lines.size() <= rect.size.y + 0.01
 		for line in lines:
 			fits = fits and font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, chosen).x <= rect.size.x + 0.01
-		if fits or chosen == maxi(1, minimum):
-			break
+		if fits or chosen == maxi(1, minimum): break
 		chosen -= 1
 	var line_height: float = font.get_height(chosen)
-	var text_height: float = line_height * lines.size()
-	var baseline: float = rect.position.y + (rect.size.y - text_height) * 0.5 + font.get_ascent(chosen)
+	var baseline: float = rect.position.y + (rect.size.y - line_height * lines.size()) * 0.5 + font.get_ascent(chosen)
 	var measured := Rect2(Vector2.ZERO, Vector2.ZERO)
+	var baselines: Array[Vector2] = []
+	var indexes: Array[int] = []
+	var offset := 0
 	for index in range(lines.size()):
 		var width: float = font.get_string_size(lines[index], HORIZONTAL_ALIGNMENT_LEFT, -1, chosen).x
 		var align_offset: float = 0.0 if alignment == HORIZONTAL_ALIGNMENT_LEFT else (rect.size.x - width) * (1.0 if alignment == HORIZONTAL_ALIGNMENT_RIGHT else 0.5)
-		var line_rect := Rect2(Vector2(rect.position.x + align_offset, baseline - font.get_ascent(chosen)), Vector2(width, line_height))
+		var origin := Vector2(rect.position.x + align_offset, baseline)
+		var line_rect := Rect2(origin - Vector2(0, font.get_ascent(chosen)), Vector2(width, line_height))
 		measured = line_rect if index == 0 else measured.merge(line_rect)
-		canvas.draw_string(font, Vector2(rect.position.x, baseline), lines[index], alignment, rect.size.x, chosen, theme_color(canvas, visual_theme, color_role))
+		baselines.append(origin)
+		indexes.append(offset)
+		offset += lines[index].length()
 		baseline += line_height
-	return {"slot": rect, "glyph_rect": measured, "text": value, "font_size": chosen, "line_count": lines.size(), "fits": fits, "drawn": true}
+	return {"slot": rect, "font": font, "glyph_rect": measured, "text": value, "font_size": chosen, "lines": lines, "baselines": baselines, "indexes": indexes, "line_height": line_height, "line_count": lines.size(), "fits": fits, "drawn": not value.is_empty()}
+
+
+static func draw_fitted_text(canvas: CanvasItem, visual_theme: Resource, definition: Resource, key: String, value: String, color_role: String, numeric: bool = false, wrap: bool = false, alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_CENTER) -> Dictionary:
+	var layout := fitted_text_layout(visual_theme, definition, key, value, numeric, wrap, alignment)
+	if not layout.drawn:
+		if not value.is_empty():
+			if (visual_theme.surface.number_font if numeric else visual_theme.surface.font) == null: record_missing(canvas, "font", "number_font" if numeric else "font")
+			if not layout.slot.has_area(): record_missing(canvas, "slot", key)
+			if int(definition.font_sizes.get(key, 0)) <= 0: record_missing(canvas, "font_size", key)
+		return {"slot": layout.slot, "text": value, "drawn": false}
+	for index in range(layout.lines.size()):
+		canvas.draw_string(layout.font, Vector2(layout.slot.position.x, layout.baselines[index].y), layout.lines[index], alignment, layout.slot.size.x, layout.font_size, theme_color(canvas, visual_theme, color_role))
+	return {"slot": layout.slot, "glyph_rect": layout.glyph_rect, "text": value, "font_size": layout.font_size, "line_count": layout.line_count, "fits": layout.fits, "drawn": true}
 
 
 static func wrap_lines(font: Font, value: String, font_size: int, width: float) -> Array[String]:

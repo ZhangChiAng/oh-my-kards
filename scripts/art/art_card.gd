@@ -98,6 +98,7 @@ func _draw_hq(definition: Resource, visual_theme: Resource) -> void:
 
 
 func _text(key: String, value: String, definition: Resource, visual_theme: Resource, color_role: String, numeric: bool = false, wrap: bool = false) -> void:
+	if str(display_data.get("editing_slot", "")) == key: return
 	var card_role: String = "card_" + color_role
 	var resolved_role: String = card_role if visual_theme.surface.palette.has(card_role) else color_role
 	_text_geometry[key] = Widgets.draw_fitted_text(self, visual_theme, definition, key, value, resolved_role, numeric, wrap)

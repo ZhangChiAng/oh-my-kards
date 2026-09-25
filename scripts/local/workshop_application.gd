@@ -10,7 +10,6 @@ func _ready() -> void:
 		if args[index] == "--workshop-store": workshop.store.root_path = args[index + 1]
 	add_child(workshop)
 	workshop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	workshop.controls.close.text = "返回主界面"
 	workshop.closed.connect(func(): get_tree().change_scene_to_file.call_deferred("res://scenes/main_menu.tscn"))
 	workshop.open()
 

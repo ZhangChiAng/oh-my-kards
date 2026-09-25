@@ -1,10 +1,15 @@
-extends PanelContainer
+extends Control
 signal closed
 const Store = preload("res://scripts/workshop/card_store.gd")
+const MetalConfirm = preload("res://scripts/workshop/metal_confirm.gd")
+const InlineEditor = preload("res://scripts/workshop/inline_card_editor.gd")
+const IllustrationThumbnail = preload("res://scripts/workshop/illustration_thumbnail.gd")
 const CardView = preload("res://scripts/art/art_card.gd")
 const Catalog = preload("res://scripts/card_catalog.gd")
-const DisplayProfile = preload("res://scripts/art/display_profile.gd")
-const ImagePreview = preload("res://scripts/workshop/image_preview.gd")
+const Crop = preload("res://scripts/art/artwork_crop.gd")
+const UnitIcon = preload("res://scripts/art/unit_icon.gd")
+const Profile = preload("res://resources/art/ancient_metal_profile.tres")
+const Library = preload("res://resources/art/illustrations/library.tres")
 const DefaultGeometry = preload("res://resources/art/battle_geometry.tres")
 var store = Store.new()
 var draft: Dictionary = {}
@@ -14,147 +19,122 @@ var profile: Resource
 var geometry: Resource = DefaultGeometry
 var controls: Dictionary = {}
 var _list: VBoxContainer
+var _collection: ScrollContainer
+var _gallery: ScrollContainer
+var _gallery_grid: HFlowContainer
 var _notice: Label
 var _full: Control
 var _field: Control
 var _file: FileDialog
-var _guard: ConfirmationDialog
-var _delete: ConfirmationDialog
+var _guard: MetalConfirm
+var _delete: MetalConfirm
 var _pending: Callable
-var _loading: bool = false
 var _cached_source: String = ""
 var _cached_texture: Texture2D
-var _ui_scale: float = 1.0
-var _panes: Array[Control] = []
-var _holders: Array[Control] = []
-var _images: Dictionary = {}
+var _editor: InlineEditor
+var _edit_key := ""
+var _edit_before: Variant
+var _type_menu: PopupPanel
+var _dragging := false
+var _drag_start := Vector2.ZERO
+var _drag_crop := Rect2()
+var _scale := 1.0
 
 func _ready() -> void:
 	get_viewport().gui_embed_subwindows = true
-	z_index = 500
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	profile = DisplayProfile.geometry_only()
-	var theme := Theme.new()
-	theme.default_font = profile.visual_theme.surface.font
-	theme.default_font_size = 20
-	self.theme = theme
-	add_theme_stylebox_override("panel", profile.visual_theme.style("well"))
-	var margin := MarginContainer.new()
-	for edge in ["left", "right", "top", "bottom"]: margin.add_theme_constant_override("margin_" + edge, 20)
-	add_child(margin)
-	var outer := VBoxContainer.new()
-	margin.add_child(outer)
-	var header := HBoxContainer.new()
-	outer.add_child(header)
-	var title := Label.new()
-	title.text = "卡牌 DIY 工具台 · 本地收藏"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
-	_button(header, "close", "关闭工具台", func(): _request(_close))
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	outer.add_child(scroll)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	var columns := HFlowContainer.new()
-	columns.add_theme_constant_override("separation", 24)
-	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(columns)
-	_list = _pane(columns, 230)
-	var edit: VBoxContainer = _pane(columns, 360)
-	_label(edit, "卡牌资料")
-	var name_edit := LineEdit.new()
-	name_edit.max_length = 16
-	name_edit.placeholder_text = "名称（1–16 字）"
-	edit.add_child(name_edit)
-	controls.name = name_edit
-	name_edit.text_changed.connect(func(value: String):
-		if not _loading:
-			draft.definition.name = value
-			_preview())
-	var kind := OptionButton.new()
-	for key in Store.TYPES: kind.add_item(Catalog.type_name(key))
-	edit.add_child(kind)
-	controls.unit_type = kind
-	kind.item_selected.connect(func(index: int):
-		if not _loading:
-			draft.definition.unit_type = Store.TYPES[index]
-			_preview())
-	var grid := GridContainer.new()
-	grid.columns = 2
-	edit.add_child(grid)
-	for key in ["deploy_cost", "action_cost", "attack", "max_hp"]:
-		_label(grid, {"deploy_cost": "部署费用", "action_cost": "行动费用", "attack": "攻击", "max_hp": "生命"}[key])
-		var spin := SpinBox.new()
-		spin.min_value = 1 if key == "max_hp" else 0
-		spin.max_value = 12 if key.ends_with("cost") else 99
-		spin.step = 1
-		spin.custom_minimum_size.x = 145
-		grid.add_child(spin)
-		controls[key] = spin
-		spin.value_changed.connect(func(value: float):
-			if not _loading:
-				draft.definition[key] = int(value)
-				_preview())
-	_label(edit, "卡图")
-	_label(edit, "无内置插画；可导入本地图片")
-	_button(edit, "import", "导入本地图片…", _open_file)
-	for mode in ["full", "field"]:
-		_label(edit, "完整卡取景" if mode == "full" else "场上卡取景")
-		for axis in ["x", "y", "zoom"]:
-			var row := HBoxContainer.new()
-			edit.add_child(row)
-			_label(row, {"x": "水平", "y": "垂直", "zoom": "缩放"}[axis])
-			var slider := HSlider.new()
-			slider.min_value = 1 if axis == "zoom" else 0
-			slider.max_value = 8 if axis == "zoom" else 1
-			slider.step = 0.01
-			slider.custom_minimum_size.x = 230
-			slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.add_child(slider)
-			controls[mode + "_" + axis] = slider
-			slider.value_changed.connect(func(value: float):
-				if _loading: return
-				if axis == "zoom": draft.artwork[mode + "_zoom"] = value
-				else: draft.artwork[mode + "_focus"][0 if axis == "x" else 1] = value
-				_preview())
-		_button(edit, mode + "_reset", "重置取景", func():
-			draft.artwork[mode + "_focus"] = [0.5, 0.5]
-			draft.artwork[mode + "_zoom"] = 1.0
-			_fill())
-	var actions := HBoxContainer.new()
-	edit.add_child(actions)
-	_button(actions, "save", "保存", _save)
-	_button(actions, "duplicate", "复制", func(): _request(_duplicate))
-	_button(actions, "delete", "删除", func(): _delete.popup_centered())
-	edit.move_child(actions, 1)
-	var previews: VBoxContainer = _pane(columns, 530)
-	_label(previews, "实时预览")
-	var preview_row := HBoxContainer.new()
-	preview_row.add_theme_constant_override("separation", 18)
-	previews.add_child(preview_row)
-	for mode in ["full", "field"]:
-		var preview_column := VBoxContainer.new()
-		preview_row.add_child(preview_column)
-		_label(preview_column, "完整卡" if mode == "full" else "场上卡")
-		var holder := Control.new()
-		holder.custom_minimum_size = geometry.template(mode).size * (2.5 if mode == "full" else 2.0)
-		preview_column.add_child(holder)
-		_holders.append(holder)
-		var card := CardView.new()
-		holder.add_child(card)
-		if mode == "full": _full = card
-		else: _field = card
-		_label(preview_column, "本地图片取景")
-		var image_preview := ImagePreview.new()
-		image_preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		image_preview.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		image_preview.custom_minimum_size = geometry.template(mode).artwork_rect.size * 2.0
-		preview_column.add_child(image_preview)
-		_images[mode] = image_preview
+	profile = Profile.duplicate(true)
+	profile.artworks = Library.duplicate(true)
+	var ui_theme := Theme.new()
+	ui_theme.default_font = profile.visual_theme.surface.font
+	ui_theme.default_font_size = 22
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		ui_theme.set_stylebox(state, "Button", profile.visual_theme.style("end_turn_face" + ("" if state == "normal" else "_" + state)))
+	ui_theme.set_color("font_color", "Button", profile.visual_theme.color("control_text"))
+	self.theme = ui_theme
+	var background := TextureRect.new()
+	background.texture = profile.visual_theme.background_texture
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(background)
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_button(self, "new", "＋ 新建卡牌", func(): _request(func(): _load(store.new_card())))
+	_collection = ScrollContainer.new()
+	_collection.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(_collection)
+	_list = VBoxContainer.new()
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list.add_theme_constant_override("separation", 10)
+	_collection.add_child(_list)
+	_full = CardView.new()
+	_field = CardView.new()
+	add_child(_full)
+	add_child(_field)
+	var art := Control.new()
+	art.mouse_default_cursor_shape = Control.CURSOR_DRAG
+	art.gui_input.connect(_art_input)
+	add_child(art)
+	controls.artwork = art
+	for key in ["name", "deploy_cost", "action_cost", "attack", "max_hp", "unit_type"]:
+		var hit := _button(self, key, "", func(): _choose_type() if key == "unit_type" else _begin_edit(key))
+		hit.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if key == "unit_type" else Control.CURSOR_IBEAM
+		for state in ["normal", "hover", "pressed", "disabled", "focus"]: hit.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	_button(self, "save", "保存", _save)
+	var delete_button := _button(self, "delete", "删除", func(): _delete.popup_centered())
+	delete_button.modulate.a = 0.72
+	var close_button := _button(self, "close", "", request_close)
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var suffix: String = "" if state == "normal" else "_hover" if state == "focus" else "_" + state
+		close_button.add_theme_stylebox_override(state, profile.visual_theme.style("settings" + suffix))
+	close_button.tooltip_text = "返回主界面"
+	var close_icon := Control.new()
+	close_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	close_icon.modulate = profile.visual_theme.color("control_danger")
+	close_button.add_child(close_icon)
+	close_icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	close_icon.draw.connect(func(): close_icon.draw_style_box(profile.visual_theme.style("close_icon"), Rect2(close_icon.size * 0.08, close_icon.size * 0.84)))
+	close_icon.resized.connect(close_icon.queue_redraw)
+	_gallery = ScrollContainer.new()
+	_gallery.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(_gallery)
+	_gallery_grid = HFlowContainer.new()
+	_gallery_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_gallery.add_child(_gallery_grid)
+	for entry in profile.artworks.entries():
+		var thumbnail := IllustrationThumbnail.new()
+		thumbnail.texture = entry.texture
+		thumbnail.visual_theme = profile.visual_theme
+		thumbnail.toggle_mode = true
+		thumbnail.custom_minimum_size = Vector2(172, 144)
+		thumbnail.pressed.connect(func(): _select_art(entry.source))
+		controls["art:" + entry.id] = thumbnail
+		_gallery_grid.add_child(thumbnail)
+	_button(self, "import", "从本地导入", _open_file)
 	_notice = Label.new()
 	_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_notice.custom_minimum_size.y = 30
-	outer.add_child(_notice)
+	_notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_notice)
+	_editor = InlineEditor.new()
+	add_child(_editor)
+	_editor.hide()
+	_editor.text_changed.connect(_editor_changed)
+	_editor.text_submitted.connect(func(_value): _end_edit())
+	_editor.gui_input.connect(func(event):
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and not _editor.is_composing():
+			_end_edit(true)
+			get_viewport().set_input_as_handled())
+	_editor.focus_exited.connect(func(): _end_edit())
+	_type_menu = PopupPanel.new()
+	add_child(_type_menu)
+	var kinds := VBoxContainer.new()
+	_type_menu.add_child(kinds)
+	for kind in Store.TYPES:
+		var option := _button(kinds, "type:" + kind, "      " + Catalog.type_name(kind), func():
+			draft.definition.unit_type = kind
+			_type_menu.hide()
+			_preview())
+		option.custom_minimum_size = Vector2(220, 48)
+		option.draw.connect(func(): UnitIcon.draw(option, kind, Rect2(12, 8, 30, 30), profile.visual_theme.color("control_text")))
 	_file = FileDialog.new()
 	_file.use_native_dialog = false
 	_file.access = FileDialog.ACCESS_FILESYSTEM
@@ -162,79 +142,89 @@ func _ready() -> void:
 	_file.filters = PackedStringArray(["*.png,*.jpg,*.jpeg,*.webp ; 图片"])
 	add_child(_file)
 	_file.file_selected.connect(_import_image)
-	_guard = ConfirmationDialog.new()
-	_guard.dialog_text = "当前卡牌有未保存修改。"
-	_guard.ok_button_text = "保存"
-	_guard.cancel_button_text = "取消"
-	controls.guard_discard = _guard.add_button("放弃修改", false, "discard")
+	_guard = MetalConfirm.new()
+	_guard.configure(profile, "guard")
 	add_child(_guard)
-	controls.guard_save = _guard.get_ok_button()
-	controls.guard_cancel = _guard.get_cancel_button()
+	controls.guard_save = _guard.buttons.confirm
+	controls.guard_cancel = _guard.buttons.cancel
+	controls.guard_discard = _guard.buttons.discard
 	_guard.confirmed.connect(func():
-		if _save(): _run_pending())
-	_guard.custom_action.connect(func(action: StringName):
-		if action == "discard":
-			_guard.hide()
-			_load(baseline if baseline.has("definition") else store.new_card())
-			_run_pending())
-	_delete = ConfirmationDialog.new()
-	_delete.dialog_text = "删除这张收藏卡？"
-	_delete.ok_button_text = "删除"
-	_delete.cancel_button_text = "取消"
+		if _save():
+			_guard.dismiss()
+			_run_pending()
+		else:
+			_guard.show_error(_notice.text)
+			_notice.text = "")
+	_guard.discarded.connect(func():
+		_guard.dismiss()
+		_load(baseline if baseline.has("definition") else store.new_card())
+		_run_pending())
+	_guard.canceled.connect(func(): _pending = Callable())
+	_delete = MetalConfirm.new()
+	_delete.configure(profile, "delete")
 	add_child(_delete)
-	controls.delete_confirm = _delete.get_ok_button()
-	controls.delete_cancel = _delete.get_cancel_button()
+	controls.delete_confirm = _delete.buttons.confirm
+	controls.delete_cancel = _delete.buttons.cancel
 	controls.file_cancel = _file.get_cancel_button()
 	controls.file_path = _file.get_line_edit()
 	controls.file_open = _file.get_ok_button()
 	_delete.confirmed.connect(_delete_card)
-	get_window().size_changed.connect(_adapt_layout)
-	_adapt_layout()
+	resized.connect(_adapt_layout)
+	get_window().focus_exited.connect(func():
+		_dragging = false
+		_end_edit())
+	_adapt_layout.call_deferred()
 	hide()
-
-func _pane(parent: Node, width: float) -> VBoxContainer:
-	var panel := PanelContainer.new()
-	panel.set_meta("base_width", width)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color.BLACK
-	style.border_color = Color.WHITE
-	style.set_border_width_all(1)
-	style.set_content_margin_all(16)
-	panel.add_theme_stylebox_override("panel", style)
-	parent.add_child(panel)
-	_panes.append(panel)
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 8)
-	panel.add_child(column)
-	return column
-
-func _adapt_layout() -> void:
-	_ui_scale = maxf(1.25, 1.0 / maxf(get_viewport().get_final_transform().x.length(), 0.1))
-	theme.default_font_size = roundi(20 * _ui_scale)
-	for pane in _panes: pane.custom_minimum_size.x = float(pane.get_meta("base_width")) * _ui_scale
-	for key in controls:
-		var control: Control = controls[key]
-		if control is Button: control.custom_minimum_size.y = 36 * _ui_scale
-		if control is SpinBox: control.custom_minimum_size.x = 145 * _ui_scale
-	for mode in ["full", "field"]:
-		for axis in ["x", "y", "zoom"]: controls[mode + "_" + axis].custom_minimum_size.x = 180 * _ui_scale
-	for index in range(_holders.size()):
-		_holders[index].custom_minimum_size = geometry.template("full" if index == 0 else "field").size * (2.5 if index == 0 else 2.0) * _ui_scale
-	if not draft.is_empty(): _preview()
-
-func _label(parent: Node, text: String) -> void:
-	var label := Label.new()
-	label.text = text
-	parent.add_child(label)
 
 func _button(parent: Node, key: String, caption: String, action: Callable) -> Button:
 	var button := Button.new()
 	button.text = caption
-	button.custom_minimum_size.y = 36
+	button.custom_minimum_size.y = 44
 	parent.add_child(button)
 	button.pressed.connect(action)
 	controls[key] = button
 	return button
+
+func _place(control: Control, rect: Rect2) -> void:
+	control.position = rect.position
+	control.size = rect.size
+
+func _adapt_layout() -> void:
+	_dragging = false
+	_end_edit()
+	if not is_instance_valid(_full): return
+	var margin := 28.0
+	var left := clampf(size.x * 0.18, 230, 340)
+	var right := maxf(340, (size.x - left) * 0.40)
+	var center := size.x - left - right - margin * 4
+	_place(controls.new, Rect2(margin, margin, left, 54))
+	_place(_collection, Rect2(margin, 96, left, maxf(0, size.y - 124)))
+	var pixel_scale := maxf(get_viewport().get_final_transform().x.length(), 0.01)
+	var button_scale := clampf(float(get_window().size.y) / 1080.0, 0.82, 1.25) / pixel_scale
+	var close_size := 56.0 * button_scale
+	_place(controls.close, Rect2(size.x - 24.0 * button_scale - close_size, 18.0 * button_scale, close_size, close_size))
+	_scale = minf(center / geometry.template("full").size.x, (size.y - 130) / geometry.template("full").size.y)
+	var full_size: Vector2 = geometry.template("full").size * _scale
+	_full.position = Vector2(left + margin * 2 + (center - full_size.x) / 2, (size.y - full_size.y - 74) / 2)
+	_full.scale = Vector2.ONE * _scale
+	var field_scale: float = minf((right - 60) / 90, (size.y * 0.55 - 35) / 123)
+	_field.scale = Vector2.ONE * field_scale
+	var rx := size.x - right - margin
+	_field.position = Vector2(rx + (right - 90 * field_scale) / 2, 46)
+	_field.position.x = minf(_field.position.x, controls.close.position.x - 90 * field_scale - 16 * button_scale)
+	_place(controls.save, Rect2(_full.position.x, _full.position.y + full_size.y + 18, full_size.x * 0.62 - 6, 48))
+	_place(controls.delete, Rect2(_full.position.x + full_size.x * 0.62 + 6, _full.position.y + full_size.y + 18, full_size.x * 0.38 - 6, 48))
+	var gy: float = _field.position.y + 123 * field_scale + 30
+	_place(_gallery, Rect2(rx, gy, right, maxf(80, size.y - gy - 100)))
+	_place(controls.import, Rect2(rx, size.y - 68, right, 44))
+	_place(_notice, Rect2(left + margin * 2, size.y - 30, center, 28))
+	var template: Resource = geometry.template("full")
+	_place(controls.artwork, Rect2(_full.position + template.artwork_rect.position * _scale, template.artwork_rect.size * _scale))
+	for key in ["name", "deploy_cost", "action_cost", "attack", "max_hp", "unit_type"]:
+		var slot: String = {"max_hp": "health", "unit_type": "type_icon_box"}.get(key, key)
+		var rect: Rect2 = template.slots[slot]
+		controls[key].custom_minimum_size = Vector2.ZERO
+		_place(controls[key], Rect2(_full.position + rect.position * _scale, rect.size * _scale))
 
 func open() -> void:
 	store.load_collection()
@@ -247,8 +237,11 @@ func dirty() -> bool:
 	return draft != baseline or imported != null
 
 func _request(action: Callable) -> void:
+	_end_edit()
 	if dirty():
 		_pending = action
+		_dragging = false
+		_type_menu.hide()
 		_guard.popup_centered()
 	else: action.call()
 
@@ -266,28 +259,70 @@ func _close() -> void:
 	closed.emit()
 
 func _load(card: Dictionary) -> void:
+	_end_edit()
 	draft = card.duplicate(true)
 	baseline = draft.duplicate(true)
 	imported = null
 	_cached_source = ""
 	_cached_texture = null
-	_fill()
+	_notice.text = ""
+	_preview()
 
-func _fill() -> void:
-	_loading = true
-	controls.name.text = draft.definition.name
-	controls.unit_type.select(Store.TYPES.find(draft.definition.unit_type))
-	for key in ["deploy_cost", "action_cost", "attack", "max_hp"]: controls[key].value = draft.definition[key]
-	for mode in ["full", "field"]:
-		controls[mode + "_x"].value = draft.artwork[mode + "_focus"][0]
-		controls[mode + "_y"].value = draft.artwork[mode + "_focus"][1]
-		controls[mode + "_zoom"].value = draft.artwork[mode + "_zoom"]
-	_loading = false
+func _input(event: InputEvent) -> void:
+	if not visible or _edit_key.is_empty(): return
+	if event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]:
+		if not _editor.get_global_rect().has_point(event.position):
+			_end_edit()
+
+func _begin_edit(key: String) -> void:
+	_end_edit()
+	_edit_key = key
+	_edit_before = draft.definition[key]
+	_editor.max_length = 16 if key == "name" else 2
+	_editor.text = str(_edit_before)
+	var slot := "health" if key == "max_hp" else key
+	_editor.configure(profile.visual_theme, geometry.template("full"), slot, key != "name", key == "name")
+	_editor.position = controls[key].position
+	_editor.size = geometry.template("full").slots[slot].size
+	_editor.scale = Vector2.ONE * _scale
+	_editor.show()
+	_editor.grab_focus()
+	_editor.select_all()
+	_preview()
+
+func _editor_changed(value: String) -> void:
+	if _edit_key.is_empty(): return
+	if _edit_key == "name": draft.definition[_edit_key] = value
+	elif value.is_valid_int():
+		var low := 1 if _edit_key == "max_hp" else 0
+		var high := 12 if _edit_key.ends_with("cost") else 99
+		draft.definition[_edit_key] = clampi(int(value), low, high)
+	_preview()
+
+func _end_edit(cancel: bool = false) -> void:
+	if _edit_key.is_empty(): return
+	if cancel: draft.definition[_edit_key] = _edit_before
+	else:
+		if _editor.is_composing(): _editor.apply_ime()
+		_editor_changed(_editor.text)
+	_edit_key = ""
+	_editor.release_focus()
+	_editor.hide()
+	_preview()
+
+func _choose_type() -> void:
+	_end_edit()
+	_type_menu.popup(Rect2i(Vector2i(controls.unit_type.global_position), Vector2i(220, 260)))
+
+func _select_art(source: String) -> void:
+	imported = null
+	_cached_source = ""
+	draft.artwork = {"source": source, "focus": [0.5, 0.5], "zoom": 1.0}
 	_preview()
 
 func _preview() -> void:
+	if draft.is_empty(): return
 	var source: String = draft.artwork.source
-	var missing: bool = false
 	if _cached_source != source:
 		_cached_source = source
 		_cached_texture = null
@@ -295,28 +330,58 @@ func _preview() -> void:
 			var img: Image = imported
 			if img == null: img = Image.load_from_file(store.image_path(source)) if FileAccess.file_exists(store.image_path(source)) else null
 			if img != null and not img.is_empty(): _cached_texture = ImageTexture.create_from_image(img)
-	missing = source.begins_with("image:") and _cached_texture == null
-	for mode in ["full", "field"]:
-		var focus: Array = draft.artwork[mode + "_focus"]
-		_images[mode].configure(_cached_texture, Vector2(focus[0], focus[1]), draft.artwork[mode + "_zoom"])
+			profile.artworks.register_texture(source, _cached_texture)
+		else: _cached_texture = profile.artworks.resolve(source)
+	if not source.is_empty() and _cached_texture == null:
+		_notice.text = "卡图缺失，请重新选择插画。"
+	elif _notice.text == "卡图缺失，请重新选择插画。":
+		_notice.text = ""
 	var data: Dictionary = draft.definition.duplicate(true)
 	data.card_id = draft.id
 	data.hp = data.max_hp
-	data.type_name = Catalog.type_name(data.unit_type)
-	data.rule_text = ""
 	data.wrap_name = true
+	data.artwork = draft.artwork.duplicate(true)
+	_field.configure(data, "field", profile, geometry.template("field"))
+	data.editing_slot = "health" if _edit_key == "max_hp" else _edit_key
 	_full.configure(data, "full", profile, geometry.template("full"))
 	_full.pivot_offset = Vector2.ZERO
-	_full.scale = Vector2.ONE * 2.5 * _ui_scale
-	_field.configure(data, "field", profile, geometry.template("field"))
 	_field.pivot_offset = Vector2.ZERO
-	_field.scale = Vector2.ONE * 2.0 * _ui_scale
+	controls.unit_type.tooltip_text = Catalog.type_name(draft.definition.unit_type)
 	controls.save.disabled = not store.writable or not store.validate(draft).is_empty()
 	controls.delete.disabled = not store.writable or not store.records.any(func(record: Variant): return record is Dictionary and record.get("id") == draft.id)
 	for key in controls:
 		if str(key).begins_with("card:"): controls[key].set_pressed_no_signal(str(key) == "card:" + str(draft.id))
-	var status: String = "卡图缺失，请重新选择图片。" if missing else ("未保存修改" if dirty() else "已保存" if not controls.delete.disabled else "填写资料后保存到本地收藏")
-	_notice.text = "；".join(store.warnings + [status])
+		if str(key).begins_with("art:"):
+			controls[key].set_pressed_no_signal(source == "library:" + str(key).trim_prefix("art:"))
+			controls[key].queue_redraw()
+
+func _art_input(event: InputEvent) -> void:
+	if _cached_texture == null: return
+	var area: Control = controls.artwork
+	var extent := Vector2(_cached_texture.get_size())
+	var focus := Vector2(draft.artwork.focus[0], draft.artwork.focus[1])
+	var crop: Rect2 = Crop.source_rect(extent, area.size, focus, draft.artwork.zoom)
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_end_edit()
+			_dragging = event.pressed
+			_drag_start = event.position
+			_drag_crop = crop
+		elif event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			var uv: Vector2 = event.position / area.size
+			var anchor: Vector2 = crop.position + uv * crop.size
+			draft.artwork.zoom = clampf(draft.artwork.zoom * (1.12 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.12), 1, 8)
+			var next: Rect2 = Crop.source_rect(extent, area.size, focus, draft.artwork.zoom)
+			var origin: Vector2 = (anchor - uv * next.size).clamp(Vector2.ZERO, extent - next.size)
+			var center: Vector2 = (origin + next.size / 2) / extent
+			draft.artwork.focus = [center.x, center.y]
+			_preview()
+	elif event is InputEventMouseMotion and _dragging:
+		var origin: Vector2 = (_drag_crop.position - (event.position - _drag_start) / area.size * _drag_crop.size).clamp(Vector2.ZERO, extent - _drag_crop.size)
+		var center: Vector2 = (origin + _drag_crop.size / 2) / extent
+		draft.artwork.focus = [center.x, center.y]
+		_preview()
+	area.accept_event()
 
 func _refresh_list() -> void:
 	for key in controls.keys():
@@ -324,47 +389,51 @@ func _refresh_list() -> void:
 	for child in _list.get_children():
 		_list.remove_child(child)
 		child.queue_free()
-	_button(_list, "new", "＋ 新建卡牌", func(): _request(func(): _load(store.new_card())))
-	if store.records.is_empty(): _label(_list, "暂无收藏")
 	for record: Variant in store.records:
 		if not record is Dictionary or not store.validate(record).is_empty():
-			_label(_list, "损坏记录（已保留）")
+			var warning := Label.new()
+			warning.text = "损坏记录（已保留）"
+			_list.add_child(warning)
 			continue
-		var button: Button = _button(_list, "card:" + str(record.id), str(record.definition.name), func(): _request(func(): _load(record)))
+		var button := _button(_list, "card:" + str(record.id), str(record.definition.name), func(): _request(func(): _load_saved(record.id)))
 		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		button.clip_text = true
 		button.toggle_mode = true
-		button.custom_minimum_size.y = 36 * _ui_scale
-		button.tooltip_text = str(record.definition.name)
+		button.custom_minimum_size.y = 56
+
+func _load_saved(id: String) -> void:
+	for record: Variant in store.records:
+		if record is Dictionary and record.get("id") == id:
+			_load(record)
+			return
 
 func _save() -> bool:
-	# Commit a SpinBox's focused text before saving.
-	for key in ["deploy_cost", "action_cost", "attack", "max_hp"]: controls[key].apply()
+	_end_edit()
 	var error: String = store.save_card(draft, imported)
 	if not error.is_empty():
 		_notice.text = error
 		return false
 	imported = null
+	_cached_source = ""
 	baseline = draft.duplicate(true)
 	_refresh_list()
 	_preview()
+	_notice.text = ""
 	return true
-
-func _duplicate() -> void:
-	draft = draft.duplicate(true)
-	draft.id = store.new_card().id
-	baseline = {}
-	_fill()
 
 func _delete_card() -> void:
 	var error: String = store.delete_card(draft.id)
 	if not error.is_empty():
 		_notice.text = error
+		_delete.show_error(error)
+		_notice.text = ""
 		return
+	_delete.dismiss()
 	_refresh_list()
 	_load(store.new_card())
 
 func _open_file() -> void:
+	_end_edit()
 	_file.popup_centered_ratio(0.75)
 
 func _import_image(path: String) -> void:
@@ -391,7 +460,9 @@ func _import_image(path: String) -> void:
 	imported = candidate
 	_cached_source = ""
 	draft.artwork.source = "image:" + "0".repeat(32)
-	_fill()
+	draft.artwork.focus = [0.5, 0.5]
+	draft.artwork.zoom = 1.0
+	_preview()
 
 func snapshot() -> Dictionary:
 	return {"open": visible, "dirty": dirty(), "selected_id": draft.get("id", ""), "count": store.records.size(), "draft": draft.duplicate(true) if visible else {}, "notice": _notice.text, "dialog_open": _file.visible or _guard.visible or _delete.visible}
@@ -415,7 +486,7 @@ func snapshot_controls() -> Dictionary:
 		rect = rect.intersection(get_global_rect())
 		if not rect.has_area(): continue
 		var point: Vector2 = rect.get_center()
-		var modal: Window = _guard if _guard.visible else _delete if _delete.visible else _file if _file.visible else null
-		var enabled: bool = not (control is BaseButton and control.disabled) and (modal == null or control.get_window() == modal)
+		var modal: Node = _guard if _guard.visible else _delete if _delete.visible else _file if _file.visible else null
+		var enabled: bool = not (control is BaseButton and control.disabled) and (modal == null or modal.is_ancestor_of(control))
 		result["workshop:" + str(key)] = {"x": rect.position.x, "y": rect.position.y, "w": rect.size.x, "h": rect.size.y, "hit_point": {"x": point.x, "y": point.y}, "rotation": 0, "enabled": enabled, "draggable": false, "drop_enabled": false}
 	return result
